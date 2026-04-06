@@ -1,0 +1,1307 @@
+{
+  "metadata": {
+    "organization": "MedSecure SAS",
+    "created": "2026-03-15"
+  },
+  "vendors": [
+    {
+      "id": "PP-001",
+      "name": "OVHcloud",
+      "legal_entity": "OVH Groupe SAS",
+      "country": "France",
+      "sector": "Hebergement cloud HDS",
+      "website": "https://www.ovhcloud.com",
+      "siret": "424 761 419 00045",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Thomas Leroy",
+        "email": "t.leroy@medsecure.com"
+      },
+      "contract": {
+        "services": "Hebergement infrastructure cloud HDS (Hosted Private Cloud). Stockage objet S3. Sauvegarde Veeam managee.",
+        "start_date": "2024-01-15",
+        "end_date": "2027-01-14",
+        "review_date": "2026-07-15"
+      },
+      "classification": {
+        "ops_impact": 4,
+        "processes": 4,
+        "replace_difficulty": 3,
+        "data_sensitivity": 4,
+        "integration": 3,
+        "regulatory_impact": 4,
+        "gdpr_subprocessor": true
+      },
+      "exposure": {
+        "dependance": 3.7,
+        "penetration": 3.7,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": true,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-001-M01",
+          "mesure": "Audit HDS annuel",
+          "details": "Verification annuelle de la certification HDS avec rapport d'audit externe. Revue des controles d'acces physiques et logiques.",
+          "type": "Organisationnelle",
+          "statut": "termine",
+          "responsable": "Thomas Leroy",
+          "echeance": "2026-03-15",
+          "ref_socle": "ISO 27001 A.18",
+          "effet": "Assurer la conformite continue de l'hebergement des donnees de sante"
+        },
+        {
+          "id": "PP-001-M02",
+          "mesure": "Test PRA semestriel",
+          "details": "Test du Plan de Reprise d'Activite avec basculement sur site secondaire. Mesure du RTO/RPO effectif vs contractuel.",
+          "type": "Technique",
+          "statut": "en_cours",
+          "responsable": "Thomas Leroy",
+          "echeance": "2026-06-30",
+          "ref_socle": "ISO 22301",
+          "effet": "Valider la capacite de reprise en cas d'indisponibilite datacenter"
+        },
+        {
+          "id": "PP-001-M03",
+          "mesure": "Chiffrement client-side des donnees de sante",
+          "details": "Mise en place du chiffrement AES-256 cote client avant envoi vers le stockage OVHcloud. Gestion des cles par MedSecure.",
+          "type": "Technique",
+          "statut": "termine",
+          "responsable": "Julien Morel",
+          "echeance": "2025-12-01",
+          "ref_socle": "ISO 27001 A.10",
+          "effet": "Reduire l'impact en cas de compromission du stockage cloud"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,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"
+    },
+    {
+      "id": "PP-002",
+      "name": "Microsoft Azure",
+      "legal_entity": "",
+      "country": "",
+      "sector": "Cloud public / IoT",
+      "website": "https://azure.microsoft.com",
+      "siret": "",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Julien Morel",
+        "email": "j.morel@medsecure.com"
+      },
+      "contract": {
+        "services": "Azure IoT Hub pour la collecte des donnees des dispositifs medicaux connectes. Azure Entra ID pour l'authentification.",
+        "start_date": "2023-06-01",
+        "end_date": "2026-05-31",
+        "review_date": "2026-04-15"
+      },
+      "classification": {
+        "ops_impact": 4,
+        "processes": 3,
+        "replace_difficulty": 3,
+        "data_sensitivity": 4,
+        "integration": 4,
+        "regulatory_impact": 3,
+        "gdpr_subprocessor": true
+      },
+      "exposure": {
+        "dependance": 3.3,
+        "penetration": 3.7,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": true,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-002-M01",
+          "mesure": "TLS 1.3 obligatoire sur IoT Hub",
+          "details": "Configuration du TLS 1.3 minimum pour toutes les connexions des dispositifs medicaux a Azure IoT Hub. Desactivation de TLS 1.0/1.1.",
+          "type": "Technique",
+          "statut": "termine",
+          "responsable": "Julien Morel",
+          "echeance": "2025-09-01",
+          "ref_socle": "ISO 27001 A.13",
+          "effet": "Securiser les communications entre dispositifs medicaux et cloud"
+        },
+        {
+          "id": "PP-002-M02",
+          "mesure": "Revue des acces Azure trimestrielle",
+          "details": "Revue trimestrielle des comptes et roles Azure AD/Entra ID. Verification des acces privilegies et suppression des comptes inactifs.",
+          "type": "Organisationnelle",
+          "statut": "en_cours",
+          "responsable": "Julien Morel",
+          "echeance": "2026-04-15",
+          "ref_socle": "ISO 27001 A.9",
+          "effet": "Limiter les acces non autorises aux ressources cloud"
+        },
+        {
+          "id": "PP-002-M03",
+          "mesure": "DTIA transferts hors UE",
+          "details": "Realisation d'une Data Transfer Impact Assessment pour les flux de donnees vers les datacenters US. Mise en place de clauses contractuelles types (CCT).",
+          "type": "Contractuelle",
+          "statut": "planifie",
+          "responsable": "Sophie Martin",
+          "echeance": "2026-06-30",
+          "ref_socle": "RGPD Art. 46",
+          "effet": "Assurer la conformite des transferts internationaux de donnees"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAIVBMVEVHcEzyUCL/uQAApO9/ugCmm1J/ugDyUCL/uQAApO9/ugAKmSe7AAAAB3RSTlMAgICAgECE7PLrlQAAAElJREFUWIXtz9sJgDAAxdD0qXX/gcUFrggFf5IBDoQjVqBfMQQEBAQEBAQ+AvMFKLEBY/YU/9diz0KNsWIN6hkTEBAQEBAQ2Azcz2R5+UPE6AoAAAAASUVORK5CYII="
+    },
+    {
+      "id": "PP-003",
+      "name": "Salesforce",
+      "legal_entity": "",
+      "country": "",
+      "sector": "CRM",
+      "website": "https://www.salesforce.com",
+      "siret": "",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Laura Chen",
+        "email": "l.chen@medsecure.com"
+      },
+      "contract": {
+        "services": "CRM pour le suivi des etablissements de sante clients. Health Cloud pour la gestion des comptes.",
+        "start_date": "2024-03-01",
+        "end_date": "2027-02-28",
+        "review_date": "2026-09-01"
+      },
+      "classification": {
+        "ops_impact": 2,
+        "processes": 2,
+        "replace_difficulty": 3,
+        "data_sensitivity": 3,
+        "integration": 2,
+        "regulatory_impact": 2,
+        "gdpr_subprocessor": true
+      },
+      "exposure": {
+        "dependance": 2.3,
+        "penetration": 2.3,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": false,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-003-M01",
+          "mesure": "Chiffrement Shield Platform",
+          "details": "Activation de Salesforce Shield pour le chiffrement des champs contenant des donnees clients sante. Gestion des cles par MedSecure.",
+          "type": "Technique",
+          "statut": "en_cours",
+          "responsable": "Laura Chen",
+          "echeance": "2026-06-01",
+          "ref_socle": "ISO 27001 A.10",
+          "effet": "Proteger les donnees clients sante dans le CRM"
+        },
+        {
+          "id": "PP-003-M02",
+          "mesure": "Revue profils et permissions Salesforce",
+          "details": "Audit semestriel des profils utilisateurs, ensembles d'autorisations et regles de partage. Principe du moindre privilege.",
+          "type": "Organisationnelle",
+          "statut": "planifie",
+          "responsable": "Laura Chen",
+          "echeance": "2026-09-01",
+          "ref_socle": "ISO 27001 A.9",
+          "effet": "Limiter l'exposition des donnees sensibles dans le CRM"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAACU0lEQVRYhe3XP4hUVxTH8c95DIOFhEVEREQWZ5EgEoJYiJWlhYhYWsloISFlCrGykCBWKSwsZIoUQcRKxEJEQpAUFiIiIsuOyBLCEiQsiywyDHss7tt1V/cfjs40/uBV9973+57z7r3nvMjMMEJVozT/BgCNtQaiM1URW9DEAnpkL9sTC18SID7ehNHpVthKjhM/Ym8ByBfES0xnuzX3YZ6xOpAeOStjPs+2Ng25AqBEbQ9xEuex78PU7NcAN3CvNj5aP7swjQd4hMlst+Y/A6C7A5dq87X0P/mcGMMPq4w/xq81zGKWYB5vs70yO0sA0ek2yRP4vf72g+iv8h5N7CMRr/EEk+Sbxb20HGCsXnR8QPP1NIVbtc9UtlsLy49hE0e+ojlM4CIuYDef3gODpn6zOoPT0ek2lgP0MTkkAFIb2yuWjt82ZacOR2ECB+sMxHb8jANDAyj6vlFutDxFnFc24jDVr9Agzo3AHJ5WqOTQUw+vpRcVSYwk+uvCbEUs4N/heudN/JHtVr9Sav3tIRm/whXisixBR2ZGdLr7lTJ7+Mv65V0Rc+T8smL0BG8Wq+JiR/QSv5A/EceUS2lAc3dFXCVniD7mMLtOOZ6qiHGMK4ViN07i0AZWM3imHONttdF93FEak3frLV69JUtNYStO4Jr1i9RN/FYbN5WaMrNatJsC+AhmJ84pHdKuFYOpJzzEFfyd7VZ/I7PVtGZXXJv8R14T8UjJxgGlxZoWHuBP/PO55myQgaVJnW4D32GLVAk9vMW7zaR5YICvqZH/GX0DeA+7dNwMD/MVCgAAAABJRU5ErkJggg=="
+    },
+    {
+      "id": "PP-004",
+      "name": "Doctolib",
+      "legal_entity": "",
+      "country": "",
+      "sector": "Telesante / Prise de rendez-vous",
+      "website": "https://www.doctolib.fr",
+      "siret": "",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Sophie Martin",
+        "email": "s.martin@medsecure.com"
+      },
+      "contract": {
+        "services": "Integration API pour la prise de rendez-vous des patients utilisant les dispositifs MedSecure. Partage de donnees de sante.",
+        "start_date": "2025-01-01",
+        "end_date": "2027-12-31",
+        "review_date": "2026-06-15"
+      },
+      "classification": {
+        "ops_impact": 2,
+        "processes": 2,
+        "replace_difficulty": 2,
+        "data_sensitivity": 4,
+        "integration": 3,
+        "regulatory_impact": 4,
+        "gdpr_subprocessor": true
+      },
+      "exposure": {
+        "dependance": 2,
+        "penetration": 3.7,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": true,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-004-M01",
+          "mesure": "Monitoring disponibilite API Doctolib",
+          "details": "Mise en place d'un monitoring temps reel de l'API Doctolib avec alertes en cas d'indisponibilite superieure a 5 minutes.",
+          "type": "Surveillance",
+          "statut": "termine",
+          "responsable": "Julien Morel",
+          "echeance": "2025-06-01",
+          "ref_socle": "ISO 27001 A.12",
+          "effet": "Detecter rapidement les pannes de l'API pour basculer sur le mode degrade"
+        },
+        {
+          "id": "PP-004-M02",
+          "mesure": "Clause RGPD sous-traitance ulterieure",
+          "details": "Ajout d'une clause contractuelle imposant a Doctolib de notifier et obtenir l'accord prealable pour tout nouveau sous-traitant traitant des donnees de sante.",
+          "type": "Contractuelle",
+          "statut": "en_cours",
+          "responsable": "Sophie Martin",
+          "echeance": "2026-06-15",
+          "ref_socle": "RGPD Art. 28",
+          "effet": "Controler la chaine de sous-traitance des donnees de sante"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAJFBMVEUQesoQesr///8AcccBd8nn8fnP4fOOuOGzz+tNlNQuhs9ootkQ1FQuAAAAAXRSTlNNSIvlSwAAAaJJREFUWIXtl8mSwyAMRO0gsf7//w6bXUZqMrh8ycEcXejRaomIbNv+aG0P4zPhBbyAHwYQkTkX0S1AiaQYkvPWMrO13oU9f1oG5Ejmj1jWxRlCAIyVsScjmBUAxXJ6kc4lgRGxIxEyheLY6SBRTO6iCYn4p4yFRelkJE1Y6QNjoj80qCymgMF1MqkBWEmYASifOfBCIzgpYQKgcuJwWtegJEwAJguw497eIlFImAFyC/gRQAnmMLlMAWw1FSCwM4ArRZeA2ph2CVDzhR9XAcjvG4Bqgdx5JwXjgFt3TKxipYcU18tI6N7UyujPCNBaRjZ978SVVi59rItAH+QhBjAwy7QM3AogIrOI4V1CgHaWMKsLUBlAgNdH9Rqq2kJAFSs87AloAQBQ+1hsPeaN/k0FgJbttQh0xKvuxgA7Jksm9AnFK5PpaJjuYR4s50zQJYSAZsEnttkWL5MNGAABreDsvbfDdF2bztMBz1A/VADj3fSJosZ7AuF+x/Khgl2+b6yjeTgsY/LtfXU8sL4+0uBdMKtPvAng3noBL+BHAE///v8BK5sXivkqJgQAAAAASUVORK5CYII="
+    },
+    {
+      "id": "PP-005",
+      "name": "AWS",
+      "legal_entity": "",
+      "country": "",
+      "sector": "Cloud public",
+      "website": "https://aws.amazon.com",
+      "siret": "",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Julien Morel",
+        "email": "j.morel@medsecure.com"
+      },
+      "contract": {
+        "services": "Environnement de production applicatif. EC2, RDS PostgreSQL, S3, CloudFront, Lambda.",
+        "start_date": "2022-09-01",
+        "end_date": "2025-08-31",
+        "review_date": "2026-05-01"
+      },
+      "classification": {
+        "ops_impact": 4,
+        "processes": 4,
+        "replace_difficulty": 4,
+        "data_sensitivity": 4,
+        "integration": 4,
+        "regulatory_impact": 4,
+        "gdpr_subprocessor": true
+      },
+      "exposure": {
+        "dependance": 4,
+        "penetration": 4,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": true,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-005-M01",
+          "mesure": "Architecture multi-AZ",
+          "details": "Deploiement de tous les services critiques sur au moins 2 zones de disponibilite (AZ) avec basculement automatique. RDS en Multi-AZ, ELB cross-AZ.",
+          "type": "Technique",
+          "statut": "termine",
+          "responsable": "Julien Morel",
+          "echeance": "2025-03-01",
+          "ref_socle": "ISO 22301",
+          "effet": "Assurer la continuite de service en cas de panne d'une zone AWS"
+        },
+        {
+          "id": "PP-005-M02",
+          "mesure": "Backup cross-region quotidien",
+          "details": "Sauvegarde quotidienne des bases de donnees RDS et des buckets S3 critiques vers une region secondaire (eu-central-1). Retention 90 jours.",
+          "type": "Technique",
+          "statut": "termine",
+          "responsable": "Julien Morel",
+          "echeance": "2025-06-01",
+          "ref_socle": "ISO 27001 A.12",
+          "effet": "Permettre la restauration en cas de perte de la region primaire"
+        },
+        {
+          "id": "PP-005-M03",
+          "mesure": "Plan de migration multi-cloud",
+          "details": "Elaboration d'un plan de migration vers un second fournisseur cloud pour reduire la dependance a AWS. Identification des services portables et des couts de sortie.",
+          "type": "Organisationnelle",
+          "statut": "planifie",
+          "responsable": "Thomas Leroy",
+          "echeance": "2026-12-31",
+          "ref_socle": "",
+          "effet": "Reduire le risque strategique de dependance a un fournisseur unique"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAdVBMVEUjLz7///8cKTkhLT0WJTYTIzQOIDIZJzcAFywAEyoAByQAECj19vcAGS7v8PHW2Nvm5+hTW2cIHDDf4eOipqySl51tdHxdZG6xtLkxO0gAAB56gIgpNUSBho2rrrNmbXa6vcFLU16JjpXOz9I8RlPDxckAAAMqqCy5AAACfUlEQVRYhe1V2Y7bMAwUdfuIJcvytb6P9P8/sZQTFCg29r4WhechAkhxRI7GCiE3bty48b+CCp0kkaSECKlCgEt+xKXAH4c5py7rl3KztvALF6WvcCvt/BDitV8Fz0fMNdMFA9tTOJAtiYEsIaxNIV0oiQwUX9U72bPzBnKYh7weAZ7xCrAzDABMKvD4OIOiyuvSXBAQqp2g6muGNMlTWIUsAUslrwCWBak0pcJd1AcKIYTuABJewCzdBh6Mlh6s3gEa5tR1OeP5WpZdCRA5LOKtBQZZj4J499gA7Fj34orAzfBGpGqAtgbzy0ItASpO2y0kisGd12Or8Kzq4YkErC2gG2D8aqCcwBJGaJSPBVJ0/HQAYmGLuYpQgyh0M8/Q6QHmEebHIZAUdQbbqREYyaDRjOk5EPAJigxavqTZBhPHasoYw4YMPZ/BgmlZj4NAjrtxsRFTFo2Flpj80jOWW5jPZRRYmpkUthSegkgUrXFEoyKbZArnsiZosF90EI0Zblvj0uAu3hUFGl9Nx0LUoWC6LacaHj20+94Lpmg4hRL2WshxpiD7vrfq4vwARul3r70jDJNcSHFKwS+bC5CkHvxan9hZ+C6+fC1IP75s6uXHtKqgmJw4/1rY3gzT1BVnBEQs6IOu1R9UeIHGj7qKPQxns6oePWibvJf8Owc6cV8LsMkTXXbaZFLZ8MXNHYuclByvkx7KO61zbzA1txq2K7H5o8xez+LW+G7KA6rVz8URNLmWHeTXUst+NfAJ6VYrRagpL5+UMAfetrfp39WZGZbwT8H6+qf6QKGczAf/fPWdmqas9uhtQPaDlf+AcqmT+ADq+eFWbty4ceOfw2/KDSaCQgTeSAAAAABJRU5ErkJggg=="
+    },
+    {
+      "id": "PP-006",
+      "name": "Stripe",
+      "legal_entity": "",
+      "country": "",
+      "sector": "Paiement en ligne",
+      "website": "https://stripe.com",
+      "siret": "",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Laura Chen",
+        "email": "l.chen@medsecure.com"
+      },
+      "contract": {
+        "services": "Traitement des paiements pour les abonnements de telesurveillance et la facturation des etablissements.",
+        "start_date": "2024-06-01",
+        "end_date": "2026-05-31",
+        "review_date": "2026-04-01"
+      },
+      "classification": {
+        "ops_impact": 2,
+        "processes": 1,
+        "replace_difficulty": 2,
+        "data_sensitivity": 3,
+        "integration": 2,
+        "regulatory_impact": 3,
+        "gdpr_subprocessor": true
+      },
+      "exposure": {
+        "dependance": 1.7,
+        "penetration": 2.7,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": false,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-006-M01",
+          "mesure": "Surveillance transactions Radar",
+          "details": "Configuration avancee de Stripe Radar pour detecter les transactions frauduleuses. Seuils personnalises pour les abonnements recurrents.",
+          "type": "Technique",
+          "statut": "termine",
+          "responsable": "Laura Chen",
+          "echeance": "2025-09-01",
+          "ref_socle": "PCI DSS",
+          "effet": "Reduire les pertes financieres liees a la fraude"
+        },
+        {
+          "id": "PP-006-M02",
+          "mesure": "Revue conformite PCI DSS annuelle",
+          "details": "Verification annuelle de la conformite PCI DSS de Stripe via le portail de conformite. Archivage de l'attestation AOC.",
+          "type": "Organisationnelle",
+          "statut": "en_cours",
+          "responsable": "Laura Chen",
+          "echeance": "2026-06-01",
+          "ref_socle": "PCI DSS",
+          "effet": "Assurer la conformite continue du traitement des paiements"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAM1BMVEVHcEz///9NMP1TOv83JrhONu9TOv1SOflYQP9TOv7y8v9oVP46Ef3b2f+Gef69t/+km/5IiBuGAAAACnRSTlMA////B0D/j/vd8CL8VwAAAP9JREFUWIXtl9kOgzAMBIMB5yKB///aOkaVoBByvbRV9n3GNkKlKwRllhqLo+Us9kxSjeU8jqOSE/O6Bt8dOhhkNU8GSfereh5RzU0L8Ar1T4CjRRNO6YKfE8CywOeLmysAghflV+cslAqAB/vNmYFiygQ82G7rDpcJiAW0tPRwSpaA54I/Ds4X8MG09BXNEgA/aROjkwKwLo7mCR5md0EXdEEX/JPAuNVbOPPZAuM2guknH7FUYByxGL40FzhDEJbGu8FpAR288c5xNi7gg5HhBH7zZQpLRw9OCujf8+PBGYLidMFXCCoq5yGjbi9dzbWvuXi2V9/a8o3v8t1Y/1/QtFIthV9swgAAAABJRU5ErkJggg=="
+    },
+    {
+      "id": "PP-007",
+      "name": "GitLab",
+      "legal_entity": "",
+      "country": "",
+      "sector": "DevOps / Forge logicielle",
+      "website": "https://about.gitlab.com",
+      "siret": "",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Thomas Leroy",
+        "email": "t.leroy@medsecure.com"
+      },
+      "contract": {
+        "services": "Forge logicielle SaaS (depots, CI/CD, registre de conteneurs). Heberge le code source des dispositifs medicaux.",
+        "start_date": "2023-01-01",
+        "end_date": "2026-12-31",
+        "review_date": "2026-10-01"
+      },
+      "classification": {
+        "ops_impact": 3,
+        "processes": 3,
+        "replace_difficulty": 3,
+        "data_sensitivity": 3,
+        "integration": 3,
+        "regulatory_impact": 2,
+        "gdpr_subprocessor": false
+      },
+      "exposure": {
+        "dependance": 3,
+        "penetration": 2.7,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": false,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-007-M01",
+          "mesure": "Revue des acces GitLab trimestrielle",
+          "details": "Audit trimestriel des membres des groupes/projets, tokens d'acces personnels et deploiement. Revocation des acces inactifs depuis plus de 90 jours.",
+          "type": "Organisationnelle",
+          "statut": "en_cours",
+          "responsable": "Thomas Leroy",
+          "echeance": "2026-04-01",
+          "ref_socle": "ISO 27001 A.9",
+          "effet": "Limiter les acces non autorises au code source des dispositifs medicaux"
+        },
+        {
+          "id": "PP-007-M02",
+          "mesure": "MFA obligatoire pour tous les comptes",
+          "details": "Activation du MFA (TOTP ou WebAuthn) obligatoire pour tous les comptes GitLab. Verification mensuelle de la conformite.",
+          "type": "Technique",
+          "statut": "termine",
+          "responsable": "Thomas Leroy",
+          "echeance": "2025-06-01",
+          "ref_socle": "ISO 27001 A.9",
+          "effet": "Empecher l'acces par vol de credentials"
+        },
+        {
+          "id": "PP-007-M03",
+          "mesure": "Audit logs et alertes SIEM",
+          "details": "Integration des audit logs GitLab dans le SIEM pour detection d'activites suspectes (clone massif, modification de pipelines, ajout de membres).",
+          "type": "Surveillance",
+          "statut": "planifie",
+          "responsable": "Thomas Leroy",
+          "echeance": "2026-09-30",
+          "ref_socle": "ISO 27001 A.12",
+          "effet": "Detecter les compromissions du code source en temps reel"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAATlBMVEVHcEz5ZybpTijiRSfoTSjnSij7aiblTCfvYifiQynnSij5lybiQyn7nSb6nSb7ayb8bSbiQyn8oyb+bybhQCn7aSbzXifrUSj6jib6dSahgoAQAAAAEHRSTlMApZ4FeCvrFFrFSLHo8uW7LxI1SQAAAjNJREFUWIWtV+1igyAMpH5ruxYKaPv+LzoRQSCJqNv9WkPuuCNoO8b+DWXd9/Vf+koxozwgQPVVZqHKC5B9D7PQ5wV60/eA9VqIQxlK2wdPobALXU6gs30FWLD1fIZ+bSSE4QKxEbDqhFUmg98osdoKYoFKIEQblsvK1zMZtr6KqO/PoRP4TsNWVrsZ+kBgIOq7GcK+nqhHyjHKQeA7VVF9J0PkNDjGR1TfyRD3+Seqjut0hiFpdE9UkdThg7IeQdKoXKNIUbYoStBo+R2oH8X64PT5TgrLwNp8H40WXIKTMFdhnIS6xlZiGufZcin1pE5rzGwtJR9YwWdIPp6zocQ4s2diwV7cQo7n6CvtxRruMR00oaaNoxmX/oMcDymocaNwzoK/udRHTkKHFM7ijzIXQ00yIujwDIxAJkZsf0bjp7Bp0jFUYn+ZQpWWJBkjtW+aK1anNXIawL7B/FJqEAUkxmwf4TfmfQLLyDQQ+wbLGwWxAGKg9q0Bhp1CEgO3z5cTMACDSGKEdz9q8N8sN6LBxiDsc37b3viEgr1UhP2QT4zCYCLsrwPY0KKz4PrzAbd3QdOyFFgM/Xm/UYUboGMx9Pe94AskiJ9BSQyzvUViArGPxdj4iQJqH8b4viNsMTK/RF2MhO9N7NgPY4T2I4Vd+z6GBtu7GNl/BtYYT1zgmbfvcMf498N0EwPyD9r3MX5i+s9x+w5RjFP2HbrL9h1cjAv2LUob45J9h+75vGjfecjiF4FhmehNGY0hAAAAAElFTkSuQmCC"
+    },
+    {
+      "id": "PP-008",
+      "name": "ServiceNow",
+      "legal_entity": "",
+      "country": "",
+      "sector": "ITSM / Gestion des services IT",
+      "website": "https://www.servicenow.com",
+      "siret": "",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Thomas Leroy",
+        "email": "t.leroy@medsecure.com"
+      },
+      "contract": {
+        "services": "ITSM pour la gestion des incidents, changements, et demandes de service. CMDB pour l'inventaire des actifs.",
+        "start_date": "2024-01-01",
+        "end_date": "2026-12-31",
+        "review_date": "2026-06-01"
+      },
+      "classification": {
+        "ops_impact": 2,
+        "processes": 3,
+        "replace_difficulty": 3,
+        "data_sensitivity": 2,
+        "integration": 3,
+        "regulatory_impact": 1,
+        "gdpr_subprocessor": false
+      },
+      "exposure": {
+        "dependance": 2.7,
+        "penetration": 2,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": false,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-008-M01",
+          "mesure": "Revue annuelle des integrations ServiceNow",
+          "details": "Audit annuel des API et integrations ServiceNow avec les autres systemes MedSecure. Verification des flux de donnees et permissions.",
+          "type": "Organisationnelle",
+          "statut": "planifie",
+          "responsable": "Thomas Leroy",
+          "echeance": "2026-06-01",
+          "ref_socle": "ISO 27001 A.13",
+          "effet": "Controler les flux de donnees entre ServiceNow et le SI interne"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAOVBMVEUZP2cLNVJi2U41RJQFMkgRO18FL0YGMkgXP2YlTIIbVnoiY4ssQIYUSmofOnJHoFlXwlIjXl02f14OTR6dAAAACnRSTlMD////3///hSuGB/mOZgAAA2tJREFUWIWll4m24iAMhkGlalvK8v4PO1mAhKWeOTNBz73W/l/+hEU1xpjP+7VJWApnnXOXuzDO6+R46jif34+heG9ajoMIGFr/5NHFd9JvRV/khcCIXou08wTCZ6VXDs7iYE5PkM9gwBZE808GagmzHiy8Vg7c1IOFnBFmWwGUgzoFKwK2wQzyZuHvHDzP/3KA83AHEAdtElYlzA7UOmiTcE+YerBYB20elw4mgNUO3L/0oKwjRNir6+NMoNV50wPUu5RDiDGEnG48nLODthmtC/HRIob9bjvdOEhKXRh5sFC2yAqwpTDKMcLRmTifKwCt5Tl9CTFx1rgWDvKdHkxUXc2/cpBv5UwQLa7R2UH6pccqTi2fAfa3/vE4esIIsMv+64hKDI8eYIcGwCKECH1TA1snwgjYrL43pLKlfDcvcW/63oEdDORyqNCu1JWFkvvqHdjeQMzlSCCA04S4X5cwjMpvlYFQj7WLLXhFyC09vGWauqsgJtK3Ityl1ndWemeq2Fo9h2xA6XURwbOWHmYTgEqSlL5AlD0GEAQc0AEwHgKlA2IBJlOakPgSBTooh5DaBlF3oCI6QEMYKzEChhgAVKO1twDnRsYIYEYF4P9qJ0/pnet7QNkxjK3fB7omphmgFwnbbyXAH0921VRjyh4gb0YvBhBQGm67exLqfRtgICp6cc0AhHkc2iWsNhb62cAjWzGwmaImgj7PMxloDvRuTGrmrOHJKvd2297Xq31+rKDl36AEuCFZvtl3HykxJY9F+NSfSLkm37iEmp6iP1Pj8ky0YgCGKb0ucfupJpGqnjbRZkQMsfvxcynGAZlbfkvHoBH7IIehioBvFmmHkfW1NoV8CoADr+UQofaKXvN7bRkFXoOuzgE7UHJfCWGnICS3FxFBb6NNOeAba8BXo9xeMBv7C1d93cSqByT3uyAOGDs9BcImygaTLjYHe9MfPI6CqWV4X5vhcNEzg85iBEj2ox8NIs30vQVyMMpr7NqGciAEsmDq7Il8L89DV1JNON65TjsQA0N0vajLhQgaoPLPiOJi1wwoolkgwF1+VcPBXdh9PR5kP77M95e+FtJVIX2Etfg2H6ngjlCK4JkYLMDP5y/dcCtXbWgEmYc3/nhGwg8D00w437b0m3++f76/9M2BVxawiNcbf/7/AZXvaPIvZCUJAAAAAElFTkSuQmCC"
+    },
+    {
+      "id": "PP-009",
+      "name": "CrowdStrike",
+      "legal_entity": "",
+      "country": "",
+      "sector": "Cybersecurite / EDR",
+      "website": "https://www.crowdstrike.com",
+      "siret": "",
+      "status": "active",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Thomas Leroy",
+        "email": "t.leroy@medsecure.com"
+      },
+      "contract": {
+        "services": "Protection des endpoints (EDR Falcon). Detection et reponse aux menaces. Threat intelligence.",
+        "start_date": "2025-03-01",
+        "end_date": "2028-02-28",
+        "review_date": "2026-09-01"
+      },
+      "classification": {
+        "ops_impact": 3,
+        "processes": 1,
+        "replace_difficulty": 2,
+        "data_sensitivity": 3,
+        "integration": 3,
+        "regulatory_impact": 2,
+        "gdpr_subprocessor": true
+      },
+      "exposure": {
+        "dependance": 2,
+        "penetration": 2.7,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": false,
+      "sub_contractors": [],
+      "measures": [
+        {
+          "id": "PP-009-M01",
+          "mesure": "Exercice de crise annuel",
+          "details": "Simulation annuelle d'un incident de securite avec CrowdStrike incluant detection, containment et remediation. Test de la chaine de communication.",
+          "type": "Organisationnelle",
+          "statut": "planifie",
+          "responsable": "Thomas Leroy",
+          "echeance": "2026-09-01",
+          "ref_socle": "ISO 27001 A.16",
+          "effet": "Valider l'efficacite de la detection et de la reponse aux incidents"
+        },
+        {
+          "id": "PP-009-M02",
+          "mesure": "Revue regles de detection trimestrielle",
+          "details": "Revue trimestrielle des regles de detection Falcon avec l'equipe CrowdStrike. Ajustement des seuils et ajout de regles specifiques aux dispositifs medicaux.",
+          "type": "Surveillance",
+          "statut": "en_cours",
+          "responsable": "Thomas Leroy",
+          "echeance": "2026-06-01",
+          "ref_socle": "ISO 27001 A.12",
+          "effet": "Optimiser la detection des menaces specifiques au secteur medical"
+        }
+      ],
+      "notes": "",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAM1BMVEVHcEz8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AAD8AADZi/+oAAAAEHRSTlMA9yOc6MJyMwfXr0FdhhVRvgPl3QAAAdxJREFUWIWlV9uywyAIjFGjRpPw/1/begHt6ZmpCE+ZTrrC7oJkuzZhXFYIsIMWIlg4ZQARpAgWhFU4kCJcb4TTCwC8eSNYCUIuAoIE4cgIahcg2ILg1gF8yAjwrCPspiAc6whOFQSBKWMBgHAvIzwVQUBly0FABCLwfY3yuaoFGG4ZLrSHPbQkuKPSYC952xAsz9gJLMqnG4JKLIQAAY88ALnkWMINzCGVvCTyWIrt+T4xCctIwo4WojIYriqDjXppxzI6Nz/jVh+vX5TENWvMMhqBiCMuwcwOmjoTNB7oexLnZB310ECdENHZoCbJbL1AneAvRYrOJXHXXuhJ7OSJWUX1X+oTN4nUqEdfbl5TEnNy4FDoPt6xyWevcdSv1+FQj0lj0mzr/ZjaT2quDKo70Pv+UCw1yESWJL01iwg6cTCysxyEYbBoEqRSMb1TUR2KBKmo85fwQwOSuEusHMiZw1i4w7wWJYhNclGWg3P99a7GafOeuoZ1BfsjfNbxsNdbn1pHtQvL9XtkOqIdG/2BhW8VV61VR15aWgsrRB0VR/j19v8QmU5TBNVsFmoUa+X/+uV9TMOCBh8RDc+K3+FP0Xaf45CsxSWS9Htxi8xN7jvcmpOGeARfKC2HFxQPJMQuoBnuAAAAAElFTkSuQmCC"
+    },
+    {
+      "id": "PP-010",
+      "name": "DocuSign",
+      "legal_entity": "",
+      "country": "",
+      "sector": "Signature electronique",
+      "website": "https://www.docusign.com",
+      "siret": "",
+      "status": "prospect",
+      "contact": {
+        "name": "",
+        "email": ""
+      },
+      "internal_contact": {
+        "name": "Sophie Martin",
+        "email": "s.martin@medsecure.com"
+      },
+      "contract": {
+        "services": "",
+        "start_date": "",
+        "end_date": "",
+        "review_date": ""
+      },
+      "classification": {
+        "ops_impact": 1,
+        "processes": 1,
+        "replace_difficulty": 1,
+        "data_sensitivity": 2,
+        "integration": 1,
+        "regulatory_impact": 2,
+        "gdpr_subprocessor": false
+      },
+      "exposure": {
+        "dependance": 1,
+        "penetration": 1.7,
+        "maturite": 0,
+        "confiance": 0
+      },
+      "certifications": [],
+      "dpa_signed": false,
+      "sub_contractors": [],
+      "measures": [],
+      "notes": "En evaluation pour remplacer les signatures manuscrites sur les contrats de maintenance des dispositifs.",
+      "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAS1BMVEVHcEz/UlL/UlL/UlL/UlL/UlL/UlJMAP9KAP//U1FHAPFNAP9MAP+qMqtMAP//UlIAAABEAOPjSUkHABmAKSlxJSUGABWKLCwrAI+QtQFpAAAADnRSTlMAPKiG9NVi9ich9Yf7SU9QnuEAAAEeSURBVFiF7dbZEoIwDAXQ0gVkEFoVwf//UllcgCSYNi8+cF+ZniktQ65SIMaTsU7nJVyxTmlpwI/P3A9jF5izTzCAgciEgHW5DBgIUmACtMAFyHNgA17jd8EHvJEC+EtEAPgWYgCHnUIM4LGrjAK0FPBiYLiH0yb1FWQHyFXVFOtcAkhPE1oVzSYIEFoScGq7HgVogQuEOwFYLkAKbIAS+AAhRACowD7EKS38HuKA0ANAxwEBbMFIgVwKlELAKSFgpEAmBMbZJALGn7IEmIajAJgHvACYh0I68JprycB7NKcCn9GeCHyrQRLgFu0mAbBm2UwA0Dy62zLdCnBD3V4XGwg0Fzp1CToJAtApTrAOHMABHMC/AGcpUMUIFVz/BAXIvby4nwfhAAAAAElFTkSuQmCC"
+    }
+  ],
+  "risks": [
+    {
+      "id": "PP-001-R01",
+      "vendor_id": "PP-001",
+      "title": "Indisponibilite datacenter HDS",
+      "description": "Panne majeure d'un datacenter OVHcloud hebergeant les donnees de sante, entrainant une interruption des services critiques de MedSecure.",
+      "category": "OPS",
+      "impact": 5,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "PRA multi-site avec basculement automatique, sauvegardes cross-datacenter",
+        "due_date": "2026-06-30"
+      },
+      "residual_impact": 4,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-001-M02 - Test PRA semestriel, PP-001-M03 - Chiffrement client-side des donnees de sante"
+    },
+    {
+      "id": "PP-001-R02",
+      "vendor_id": "PP-001",
+      "title": "Fuite de donnees de sante hebergees",
+      "description": "Compromission de l'infrastructure OVHcloud conduisant a une exfiltration de donnees de sante des patients MedSecure.",
+      "category": "CYBER",
+      "impact": 5,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "Chiffrement client-side, segmentation reseau, audit HDS regulier",
+        "due_date": "2026-03-31"
+      },
+      "residual_impact": 4,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-001-M01 - Audit HDS annuel, PP-001-M03 - Chiffrement client-side des donnees de sante"
+    },
+    {
+      "id": "PP-002-R01",
+      "vendor_id": "PP-002",
+      "title": "Compromission Azure IoT Hub",
+      "description": "Acces non autorise a Azure IoT Hub permettant l'interception ou la modification des donnees transmises par les dispositifs medicaux connectes.",
+      "category": "CYBER",
+      "impact": 5,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "TLS 1.3, authentification par certificat X.509, monitoring des connexions anormales",
+        "due_date": "2025-12-31"
+      },
+      "residual_impact": 3,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-002-M01 - TLS 1.3 obligatoire sur IoT Hub, PP-002-M02 - Revue des acces Azure trimestrielle"
+    },
+    {
+      "id": "PP-002-R02",
+      "vendor_id": "PP-002",
+      "title": "Transfert de donnees hors UE",
+      "description": "Donnees de sante traitees ou stockees sur des serveurs Microsoft hors de l'Union europeenne en violation du RGPD et des exigences HDS.",
+      "category": "COMP",
+      "impact": 3,
+      "likelihood": 3,
+      "treatment": {
+        "response": "mitigate",
+        "details": "DTIA, clauses contractuelles types, restriction des regions Azure a eu-west-1",
+        "due_date": "2026-06-30"
+      },
+      "residual_impact": 2,
+      "residual_likelihood": 2,
+      "status": "active",
+      "linked_measures": "PP-002-M03 - DTIA transferts hors UE"
+    },
+    {
+      "id": "PP-003-R01",
+      "vendor_id": "PP-003",
+      "title": "Fuite de donnees clients sante via CRM",
+      "description": "Exfiltration de donnees des etablissements de sante clients depuis Salesforce suite a une mauvaise configuration des permissions ou une vulnerabilite.",
+      "category": "CYBER",
+      "impact": 4,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "Chiffrement Shield, revue des permissions, monitoring des exports de donnees",
+        "due_date": ""
+      },
+      "residual_impact": 3,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-003-M01 - Chiffrement Shield Platform, PP-003-M02 - Revue profils et permissions Salesforce"
+    },
+    {
+      "id": "PP-004-R01",
+      "vendor_id": "PP-004",
+      "title": "Indisponibilite API partage de donnees",
+      "description": "Panne prolongee de l'API Doctolib empechant le partage de donnees de sante et la prise de rendez-vous pour les patients MedSecure.",
+      "category": "OPS",
+      "impact": 3,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "Mode degrade avec prise de rendez-vous manuelle, monitoring API temps reel",
+        "due_date": ""
+      },
+      "residual_impact": 2,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-004-M01 - Monitoring disponibilite API Doctolib"
+    },
+    {
+      "id": "PP-004-R02",
+      "vendor_id": "PP-004",
+      "title": "Non-conformite RGPD d'un sous-traitant Doctolib",
+      "description": "Un sous-traitant de Doctolib traite des donnees de sante MedSecure sans garanties RGPD suffisantes, entrainant un risque de sanction CNIL.",
+      "category": "COMP",
+      "impact": 4,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "Clause de notification sous-traitance ulterieure, audit annuel des sous-traitants Doctolib",
+        "due_date": ""
+      },
+      "residual_impact": 3,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-004-M02 - Clause RGPD sous-traitance ulterieure"
+    },
+    {
+      "id": "PP-005-R01",
+      "vendor_id": "PP-005",
+      "title": "Panne infrastructure de production AWS",
+      "description": "Panne majeure d'une region AWS (eu-west-3) entrainant l'indisponibilite de l'ensemble des services de production MedSecure.",
+      "category": "OPS",
+      "impact": 5,
+      "likelihood": 1,
+      "treatment": {
+        "response": "mitigate",
+        "details": "Architecture multi-AZ, backup cross-region, plan de basculement regional",
+        "due_date": "2026-06-30"
+      },
+      "residual_impact": 3,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-005-M01 - Architecture multi-AZ, PP-005-M02 - Backup cross-region quotidien"
+    },
+    {
+      "id": "PP-005-R02",
+      "vendor_id": "PP-005",
+      "title": "Dependance excessive au cloud provider AWS",
+      "description": "Concentration excessive des services critiques sur AWS creant un risque strategique en cas de changement de conditions commerciales, sanction ou incident majeur.",
+      "category": "STRAT",
+      "impact": 4,
+      "likelihood": 3,
+      "treatment": {
+        "response": "mitigate",
+        "details": "Plan de migration multi-cloud, portabilite des services, evaluation des couts de sortie",
+        "due_date": "2026-12-31"
+      },
+      "residual_impact": 3,
+      "residual_likelihood": 2,
+      "status": "active",
+      "linked_measures": "PP-005-M03 - Plan de migration multi-cloud"
+    },
+    {
+      "id": "PP-006-R01",
+      "vendor_id": "PP-006",
+      "title": "Fraude sur les paiements",
+      "description": "Transactions frauduleuses sur les abonnements de telesurveillance MedSecure entrainant des pertes financieres et des litiges avec les etablissements clients.",
+      "category": "FIN",
+      "impact": 3,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "Configuration avancee Stripe Radar, alertes sur transactions anormales, revue PCI DSS",
+        "due_date": ""
+      },
+      "residual_impact": 2,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-006-M01 - Surveillance transactions Radar, PP-006-M02 - Revue conformite PCI DSS annuelle"
+    },
+    {
+      "id": "PP-007-R01",
+      "vendor_id": "PP-007",
+      "title": "Compromission du code source des dispositifs medicaux",
+      "description": "Acces non autorise aux depots GitLab contenant le code source des dispositifs medicaux, pouvant conduire a du vol de propriete intellectuelle ou a l'injection de code malveillant.",
+      "category": "CYBER",
+      "impact": 5,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "MFA obligatoire, revue des acces, audit logs SIEM, signed commits",
+        "due_date": "2026-09-30"
+      },
+      "residual_impact": 3,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-007-M01 - Revue des acces GitLab trimestrielle, PP-007-M02 - MFA obligatoire pour tous les comptes, PP-007-M03 - Audit logs et alertes SIEM"
+    },
+    {
+      "id": "PP-009-R01",
+      "vendor_id": "PP-009",
+      "title": "Defaillance de la detection EDR",
+      "description": "Le systeme CrowdStrike Falcon ne detecte pas une menace avancee (APT, ransomware) ciblant les systemes MedSecure, permettant une compromission prolongee.",
+      "category": "CYBER",
+      "impact": 4,
+      "likelihood": 2,
+      "treatment": {
+        "response": "mitigate",
+        "details": "Regles de detection specifiques dispositifs medicaux, exercice de crise, threat hunting periodique",
+        "due_date": ""
+      },
+      "residual_impact": 3,
+      "residual_likelihood": 1,
+      "status": "active",
+      "linked_measures": "PP-009-M01 - Exercice de crise annuel, PP-009-M02 - Revue regles de detection trimestrielle"
+    },
+    {
+      "id": "PP-009-R02",
+      "vendor_id": "PP-009",
+      "title": "Incident type CrowdStrike juillet 2024",
+      "description": "Mise a jour defectueuse de l'agent Falcon provoquant un crash systeme generalise (BSOD) sur l'ensemble du parc MedSecure, comme l'incident mondial de juillet 2024.",
+      "category": "OPS",
+      "impact": 4,
+      "likelihood": 2,
+      "treatment": {
+        "response": "accept",
+        "details": "Risque accepte compte tenu des mesures de deploiement progressif mises en place par CrowdStrike post-incident. Surveillance de la politique de mise a jour.",
+        "due_date": ""
+      },
+      "residual_impact": 0,
+      "residual_likelihood": 0,
+      "status": "active",
+      "linked_measures": ""
+    }
+  ],
+  "assessments": [],
+  "documents": [
+    {
+      "id": "DOC-001",
+      "vendor_id": "PP-001",
+      "name": "Securite OVHcloud",
+      "type": "trust_center",
+      "url": "https://www.ovhcloud.com/fr/personal-data-protection/security/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-002",
+      "vendor_id": "PP-001",
+      "name": "Certifications et compliance",
+      "type": "certification",
+      "url": "https://www.ovhcloud.com/fr/compliance/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-003",
+      "vendor_id": "PP-001",
+      "name": "Protection des donnees personnelles",
+      "type": "privacy",
+      "url": "https://www.ovhcloud.com/fr/personal-data-protection/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-004",
+      "vendor_id": "PP-001",
+      "name": "Status Page",
+      "type": "status_page",
+      "url": "https://www.status-ovhcloud.com",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-005",
+      "vendor_id": "PP-001",
+      "name": "security.txt",
+      "type": "bug_bounty",
+      "url": "https://www.ovhcloud.com/.well-known/security.txt",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-006",
+      "vendor_id": "PP-002",
+      "name": "Microsoft Trust Center",
+      "type": "trust_center",
+      "url": "https://www.microsoft.com/en-us/trust-center",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-007",
+      "vendor_id": "PP-002",
+      "name": "Service Trust Portal (SOC 2, ISO 27001)",
+      "type": "audit_report",
+      "url": "https://servicetrust.microsoft.com/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-008",
+      "vendor_id": "PP-002",
+      "name": "Privacy Statement",
+      "type": "privacy",
+      "url": "https://privacy.microsoft.com/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-009",
+      "vendor_id": "PP-002",
+      "name": "Azure Status",
+      "type": "status_page",
+      "url": "https://status.azure.com",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-010",
+      "vendor_id": "PP-002",
+      "name": "Bug Bounty Program",
+      "type": "bug_bounty",
+      "url": "https://www.microsoft.com/en-us/msrc/bounty",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-011",
+      "vendor_id": "PP-002",
+      "name": "SOC 2 Compliance",
+      "type": "certification",
+      "url": "https://learn.microsoft.com/en-us/compliance/regulatory/offering-soc-2",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-012",
+      "vendor_id": "PP-003",
+      "name": "Salesforce Trust",
+      "type": "trust_center",
+      "url": "https://trust.salesforce.com/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-013",
+      "vendor_id": "PP-003",
+      "name": "Compliance Documentation",
+      "type": "certification",
+      "url": "https://compliance.salesforce.com/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-014",
+      "vendor_id": "PP-003",
+      "name": "Privacy Policy",
+      "type": "privacy",
+      "url": "https://www.salesforce.com/company/privacy/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-015",
+      "vendor_id": "PP-003",
+      "name": "Status Page",
+      "type": "status_page",
+      "url": "https://status.salesforce.com/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-016",
+      "vendor_id": "PP-003",
+      "name": "Responsible Disclosure",
+      "type": "bug_bounty",
+      "url": "https://www.salesforce.com/company/disclosure/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-017",
+      "vendor_id": "PP-004",
+      "name": "Securite Doctolib",
+      "type": "trust_center",
+      "url": "https://info.doctolib.fr/securite/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-018",
+      "vendor_id": "PP-004",
+      "name": "Status Page",
+      "type": "status_page",
+      "url": "https://status.doctolib.fr",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-019",
+      "vendor_id": "PP-005",
+      "name": "AWS Compliance",
+      "type": "certification",
+      "url": "https://aws.amazon.com/compliance/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-020",
+      "vendor_id": "PP-005",
+      "name": "AWS Artifact (rapports SOC 2, ISO 27001)",
+      "type": "audit_report",
+      "url": "https://aws.amazon.com/artifact/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-021",
+      "vendor_id": "PP-005",
+      "name": "Privacy Notice",
+      "type": "privacy",
+      "url": "https://aws.amazon.com/privacy/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-022",
+      "vendor_id": "PP-005",
+      "name": "AWS Health Dashboard",
+      "type": "status_page",
+      "url": "https://health.aws.amazon.com/health/status",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-023",
+      "vendor_id": "PP-005",
+      "name": "Vulnerability Reporting",
+      "type": "bug_bounty",
+      "url": "https://aws.amazon.com/security/vulnerability-reporting/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-024",
+      "vendor_id": "PP-006",
+      "name": "Stripe Security",
+      "type": "trust_center",
+      "url": "https://stripe.com/docs/security",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-025",
+      "vendor_id": "PP-006",
+      "name": "PCI DSS Level 1",
+      "type": "certification",
+      "url": "https://stripe.com/docs/security/stripe",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-026",
+      "vendor_id": "PP-006",
+      "name": "Privacy Policy",
+      "type": "privacy",
+      "url": "https://stripe.com/privacy",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-027",
+      "vendor_id": "PP-006",
+      "name": "Data Processing Agreement",
+      "type": "dpa",
+      "url": "https://stripe.com/legal/dpa",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-028",
+      "vendor_id": "PP-006",
+      "name": "Status Page",
+      "type": "status_page",
+      "url": "https://status.stripe.com/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-029",
+      "vendor_id": "PP-007",
+      "name": "GitLab Security",
+      "type": "trust_center",
+      "url": "https://about.gitlab.com/security/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-030",
+      "vendor_id": "PP-007",
+      "name": "Privacy Policy",
+      "type": "privacy",
+      "url": "https://about.gitlab.com/privacy/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-031",
+      "vendor_id": "PP-007",
+      "name": "Status Page",
+      "type": "status_page",
+      "url": "https://status.gitlab.com/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-032",
+      "vendor_id": "PP-007",
+      "name": "Responsible Disclosure",
+      "type": "bug_bounty",
+      "url": "https://about.gitlab.com/security/disclosure/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-033",
+      "vendor_id": "PP-008",
+      "name": "ServiceNow Trust",
+      "type": "trust_center",
+      "url": "https://trust.servicenow.com/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-034",
+      "vendor_id": "PP-009",
+      "name": "CrowdStrike Privacy Notice",
+      "type": "privacy",
+      "url": "https://www.crowdstrike.com/privacy-notice/",
+      "expiry_date": "",
+      "source": "ai",
+      "verified": true
+    },
+    {
+      "id": "DOC-035",
+      "vendor_id": "PP-010",
+      "name": "DocuSign Trust Center",
+      "type": "trust_center",
+      "url": "https://www.docusign.com/trust",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-036",
+      "vendor_id": "PP-010",
+      "name": "Security & Compliance",
+      "type": "certification",
+      "url": "https://www.docusign.com/trust/security",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    },
+    {
+      "id": "DOC-037",
+      "vendor_id": "PP-010",
+      "name": "Status Page",
+      "type": "status_page",
+      "url": "https://status.docusign.com/",
+      "expiry_date": "",
+      "source": "probe",
+      "verified": true
+    }
+  ]
+}

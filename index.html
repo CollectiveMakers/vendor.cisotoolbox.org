@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CISO Toolbox — Vendor Risk Management</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="css/cisotoolbox.css">
+<link rel="stylesheet" href="css/tprm.css">
+</head>
+<body>
+
+<div class="toolbar">
+    <button class="btn-hamburger" data-click="_toggleSidebarMobile">&#9776;</button>
+    <span class="app-title" data-i18n="toolbar.subtitle">Vendor</span>
+    <span class="flex-spacer"></span>
+    <div class="toolbar-menu">
+        <button class="btn-menu" data-click="toggleMenu" data-i18n="menu_file">Fichier</button>
+        <div class="toolbar-dropdown" id="io-menu">
+            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["newAnalysis"]' data-i18n="menu_new">Nouvelle analyse</div>
+            <div class="toolbar-dropdown-sep"></div>
+            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["openFile"]' data-i18n="menu_open">Ouvrir</div>
+            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["saveJSON"]' data-i18n="menu_save_as">Enregistrer sous</div>
+            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["exportExcel"]' data-i18n="menu_export_excel">Exporter Excel</div>
+            <div class="toolbar-dropdown-sep"></div>
+            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["exportPP"]' data-i18n="pp.export_title">Export Risk</div>
+            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["importPPFromRisk"]' data-i18n="pp.import_title">Import Risk</div>
+        </div>
+    </div>
+    <span class="status" id="status-msg"></span>
+    <span class="toolbar-right" id="toolbar-right"></span>
+</div>
+
+<div class="app-layout">
+<nav class="sidebar" id="sidebar">
+    <div class="sidebar-collapse" data-click="toggleSidebar" title="Masquer le menu">&#10005;</div>
+    <div class="sidebar-section">TPRM</div>
+    <div class="sidebar-item active" data-click="selectPanel" data-args='["dashboard"]' data-i18n="nav.dashboard">Tableau de bord</div>
+    <div class="sidebar-item" data-click="selectPanel" data-args='["vendors"]' data-i18n="nav.vendors">Fournisseurs</div>
+    <div class="sidebar-item" data-click="selectPanel" data-args='["risks"]' data-i18n="nav.risks">Risques</div>
+    <div class="sidebar-item" data-click="selectPanel" data-args='["measures"]' data-i18n="nav.measures">Mesures</div>
+    <div class="sidebar-item" data-click="selectPanel" data-args='["documents"]' data-i18n="nav.documents">Documents</div>
+    <div class="flex-spacer"></div>
+    <div class="sidebar-section" data-i18n="tprm.sidebar.section_aide">Aide</div>
+    <div class="sidebar-item" data-click="toggleHelp" data-args='["methodo"]' data-i18n="tprm.sidebar.methodo">Methodologie</div>
+    <div class="sidebar-item" data-click="toggleHelp" data-args='["usage"]' data-i18n="tprm.sidebar.usage">Utilisation</div>
+    <a href="https://www.cisotoolbox.org" target="_blank" rel="noopener noreferrer" class="sidebar-brand">cisotoolbox.org</a>
+</nav>
+
+<div class="sidebar-expand" id="sidebar-expand" data-click="toggleSidebar" title="Afficher le menu">&#8250;</div>
+<main class="main-content">
+<div class="container" id="content"></div>
+</main>
+</div>
+
+<input type="file" id="file-input" accept=".json" style="display:none">
+<input type="file" id="risk-import-input" accept=".json" style="display:none" data-change="importRiskFile" data-pass-event>
+
+<!-- Panel d'aide -->
+<div class="help-overlay" id="help-overlay" data-click-self="toggleHelp">
+<div class="help-panel">
+<button class="close-help" data-click="toggleHelp">&times;</button>
+
+<div class="help-tabs">
+    <div class="help-tab active" id="help-tab-methodo" data-click="switchHelpTab" data-args='["methodo"]' data-i18n="tprm.help.tab_methodo">Methodologie TPRM</div>
+    <div class="help-tab" id="help-tab-usage" data-click="switchHelpTab" data-args='["usage"]' data-i18n="tprm.help.tab_usage">Utilisation de l'application</div>
+</div>
+
+<!-- Onglet Methodologie -->
+<div class="help-content" id="help-content-methodo" data-i18n-html="tprm.help.methodo"></div>
+
+<!-- Onglet Utilisation -->
+<div class="help-content" id="help-content-usage" style="display:none" data-i18n-html="tprm.help.usage"></div>
+
+</div>
+</div>
+
+<div class="pwd-overlay" id="confirm-overlay">
+<div class="pwd-panel">
+    <div class="pwd-title" id="confirm-title"></div>
+    <div id="confirm-body" style="font-size:0.9em;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="pwd-btn pwd-cancel" id="confirm-non" data-i18n="btn_discard">Non</button>
+        <button class="pwd-btn pwd-ok" id="confirm-oui" data-i18n="btn_restore">Oui</button>
+    </div>
+</div>
+</div>
+
+<div class="pwd-overlay" id="pwd-overlay">
+<div class="pwd-panel">
+    <div class="pwd-title" id="pwd-title">Mot de passe</div>
+    <input type="password" class="pwd-input" id="pwd-input" placeholder="Mot de passe" autocomplete="off">
+    <input type="password" class="pwd-input hidden" id="pwd-input2" placeholder="Confirmer le mot de passe" autocomplete="off">
+    <div class="pwd-error" id="pwd-error"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="pwd-btn pwd-cancel" id="pwd-cancel">Annuler</button>
+        <button class="pwd-btn pwd-ok" id="pwd-ok">OK</button>
+    </div>
+</div>
+</div>
+
+<script src="js/cisotoolbox.js"></script>
+<script src="js/cisotoolbox_local.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/TPRM_i18n_fr.js"></script>
+<script src="js/TPRM_i18n_en.js"></script>
+<script src="js/TPRM_questions.js"></script>
+<script src="js/ct_refselect.js"></script>
+<script src="js/TPRM_app.js"></script>
+<script src="js/ai_common.js"></script>
+
+</body>
+</html>
