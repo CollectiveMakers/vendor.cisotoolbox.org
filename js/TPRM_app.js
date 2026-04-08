@@ -3034,7 +3034,7 @@ function _importPP(ppList) {
 function _getTier(v) {
     var ex = v.exposure || {};
     var menace = _computeExposure(ex);
-    if (menace >= 3) return "critical";
+    if (menace >= 4) return "critical";
     if (menace >= 2) return "high";
     if (menace >= 1) return "medium";
     return "low";
