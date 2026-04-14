@@ -1597,11 +1597,19 @@ function _renderVendorAssessments(v) {
         var comp = a.completion_rate != null ? a.completion_rate : 0;
         var compColor = comp === 100 ? "var(--green)" : comp > 50 ? "var(--orange)" : "var(--text-muted)";
         var scoreColor = a.score != null ? (a.score >= 80 ? "var(--green)" : a.score >= 50 ? "var(--orange)" : "var(--red)") : "var(--text-muted)";
+        var statusKey = a.status || "draft";
+        var label = _assessmentStatusLabel(statusKey);
+        // Template-driven assessments display the template name; legacy ones keep the type.
+        var title = a.template_snapshot ? (a.template_snapshot.name || a.id) : t("assessment.type_" + (a.type || "periodic"));
 
         h += '<div class="question-card" style="cursor:pointer" data-click="openAssessmentFromVendor" data-args=\'' + _da(a.id, _selectedVendor) + '\'>';
-        h += '<div style="display:flex;justify-content:space-between;align-items:center">';
-        h += '<span style="font-weight:600">' + esc(a.id) + ' — ' + t("assessment.type_" + a.type) + '</span>';
-        h += '<span style="font-size:0.82em;color:var(--text-muted)">' + esc(a.date || "") + '</span>';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">';
+        h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+        h += '<span style="font-weight:600">' + esc(a.id) + '</span>';
+        h += '<span style="font-size:0.82em;color:var(--gray-dark)">' + esc(title) + '</span>';
+        h += '<span class="evalv2-status evalv2-status-' + esc(statusKey) + '">' + esc(label) + '</span>';
+        h += '</div>';
+        h += '<span style="font-size:0.78em;color:var(--gray-dark)">' + esc(a.date || "") + '</span>';
         h += '</div>';
         // Progress bar + score
         h += '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">';
@@ -1616,6 +1624,16 @@ function _renderVendorAssessments(v) {
         h += '</div>';
     });
     return h;
+}
+
+// Safe lookup for the localized label of any assessment status (legacy and V2).
+function _assessmentStatusLabel(statusKey) {
+    var key = "assessment.status_" + statusKey;
+    var label = t(key);
+    // If the translation key is missing, t() returns the key itself — fall back
+    // to a title-cased version of the status so the UI stays readable.
+    if (label === key) return statusKey.replace(/_/g, " ");
+    return label;
 }
 
 function _renderVendorDocs(v) {
@@ -1857,7 +1875,7 @@ function renderAssessmentList() {
         h += '<td' + hd("completion") + ' style="color:' + compColor + ';font-weight:600">' + comp + '%</td>';
         h += '<td' + hd("score") + '>' + (a.score != null ? a.score + '%' : '-') + '</td>';
         h += '<td' + hd("status") + '>' + t("assessment.status_" + a.status) + '</td>';
-        h += '<td><button class="btn-add" data-click="openAssessment" data-args=\'' + _da(a.id) + '\'>' + t("vendor.edit") + '</button>';
+        h += '<td><button class="btn-add" data-click="openAssessmentDispatch" data-args=\'' + _da(a.id) + '\'>' + t("vendor.edit") + '</button>';
         h += ' <button class="btn-add" data-click="exportAssessmentExcel" data-args=\'' + _da(a.id) + '\'>' + t("assessment.export_excel") + '</button>';
         h += ' <button class="btn-del" data-click="deleteAssessment" data-args=\'' + _da(a.id) + '\'>' + t("vendor.delete") + '</button></td>';
         h += '</tr>';
@@ -1887,9 +1905,22 @@ function renderDocList() {
 // ASSESSMENT DETAIL (Questionnaire)
 // ═══════════════════════════════════════════════════════════════
 
+function openAssessmentDispatch(assessId) {
+    var a = D.assessments.find(function(x) { return x.id === assessId; });
+    if (a && a.template_snapshot) openAssessmentV2(assessId);
+    else openAssessment(assessId);
+}
+window.openAssessmentDispatch = openAssessmentDispatch;
+
 function openAssessmentFromVendor(assessId, vendorIdx) {
     _assessReturnToVendor = vendorIdx;
-    openAssessment(assessId);
+    var a = D.assessments.find(function(x) { return x.id === assessId; });
+    if (a && a.template_snapshot) {
+        _assessmentV2Returning = vendorIdx;
+        openAssessmentV2(assessId);
+    } else {
+        openAssessment(assessId);
+    }
 }
 window.openAssessmentFromVendor = openAssessmentFromVendor;
 
@@ -2308,15 +2339,49 @@ function deleteRisk(riskIdx) {
 window.deleteRisk = deleteRisk;
 
 function newAssessment(vendorId) {
-    // Propose choice: manual or import
+    _ensureDefaultTemplate();
+    var templates = D.questionnaire_templates || [];
+    var tplOptions = templates.map(function(tp) {
+        var sCount = (tp.sections || []).length;
+        var qCount = (tp.sections || []).reduce(function(n, s) { return n + (s.questions || []).length; }, 0);
+        return '<option value="' + esc(tp.id) + '">' + esc(tp.name) + '  —  ' + sCount + ' ' + esc(t("template.col_sections").toLowerCase()) + ', ' + qCount + ' ' + esc(t("template.col_questions").toLowerCase()) + '</option>';
+    }).join("");
+
     _showModal(
         '<h3>' + t("assessment.new") + '</h3>' +
-        '<p style="font-size:0.85em;color:var(--text-muted);margin-bottom:12px">' + esc(_vendorName(vendorId)) + '</p>' +
-        '<div style="display:flex;gap:8px">' +
-        '<button class="btn-add" data-click="_newAssessmentManual" data-args=\'' + _da(vendorId) + '\'>' + t("assessment.manual") + '</button>' +
-        '<button class="btn-add" style="background:var(--light-blue)" data-click="_newAssessmentImport" data-args=\'' + _da(vendorId) + '\'>' + t("assessment.import_excel") + '</button>' +
-        '</div>'
+        '<p style="font-size:0.85em;color:var(--gray-dark);margin-bottom:14px">' + esc(_vendorName(vendorId)) + '</p>' +
+        // Option 1: from template
+        '<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px">' +
+            '<div style="font-size:0.78em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:8px">' + esc(t("assessment.from_template")) + '</div>' +
+            '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.choose_template")) + '</label>' +
+            '<select id="na-template" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:8px">' + tplOptions + '</select>' +
+            '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.due_date")) + '</label>' +
+            '<input type="date" id="na-due-date" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:10px">' +
+            '<button class="btn-add" style="width:100%" data-click="_newAssessmentFromTemplate" data-args=\'' + _da(vendorId) + '\'>' + esc(t("assessment.start_assessment")) + '</button>' +
+        '</div>' +
+        // Option 2: import response
+        '<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px">' +
+            '<div style="font-size:0.78em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:8px">' + esc(t("assessment.import_vendor_response")) + '</div>' +
+            '<p style="font-size:0.78em;color:var(--gray-dark);margin-bottom:8px">' + esc(t("assessment.import_hint")) + '</p>' +
+            '<button class="btn-add" style="width:100%;background:var(--light-blue)" data-click="_importAssessmentResponse" data-args=\'' + _da(vendorId) + '\'>' + esc(t("assessment.import_file")) + '</button>' +
+        '</div>' +
+        // Option 3 (legacy): manual creation with built-in questions
+        '<details style="margin-top:10px"><summary style="font-size:0.78em;color:var(--gray-dark);cursor:pointer">' + esc(t("assessment.legacy_options")) + '</summary>' +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+            '<button class="tpl-icon-btn" style="flex:1" data-click="_newAssessmentManual" data-args=\'' + _da(vendorId) + '\'>' + esc(t("assessment.manual")) + '</button>' +
+            '<button class="tpl-icon-btn" style="flex:1" data-click="_newAssessmentImport" data-args=\'' + _da(vendorId) + '\'>' + esc(t("assessment.import_excel_legacy")) + '</button>' +
+        '</div>' +
+        '</details>'
     );
+
+    // Default due date = today + 30 days
+    setTimeout(function() {
+        var el = document.getElementById("na-due-date");
+        if (el) {
+            var d = new Date(); d.setDate(d.getDate() + 30);
+            el.value = d.toISOString().split("T")[0];
+        }
+    }, 0);
 }
 window.newAssessment = newAssessment;
 
@@ -2438,14 +2503,48 @@ function _nextSectionId(tpl) {
     return id;
 }
 
-function _nextQuestionId(section) {
-    var n = (section.questions || []).length + 1;
+// Question IDs are unique at the TEMPLATE level (not the section level)
+// so response lookups never collide between sections.
+function _nextQuestionId(tpl) {
+    var existing = {};
+    (tpl.sections || []).forEach(function(s) {
+        (s.questions || []).forEach(function(q) { if (q.id) existing[q.id] = true; });
+    });
+    var n = Object.keys(existing).length + 1;
     var id;
     do {
         id = "Q-" + String(n).padStart(3, "0");
         n++;
-    } while ((section.questions || []).some(function(q) { return q.id === id; }));
+    } while (existing[id]);
     return id;
+}
+
+// Ensure a template has globally unique question IDs. Called on load
+// to heal templates that were created before the fix.
+function _normalizeTemplateQuestionIds(tpl) {
+    if (!tpl || !tpl.sections) return false;
+    var seen = {}, changed = false, mapping = {};
+    var n = 1;
+    tpl.sections.forEach(function(s) {
+        (s.questions || []).forEach(function(q) {
+            if (!q.id || seen[q.id]) {
+                var oldId = q.id;
+                var id;
+                do {
+                    id = "Q-" + String(n).padStart(3, "0");
+                    n++;
+                } while (seen[id]);
+                if (oldId) mapping[oldId] = id;
+                q.id = id;
+                changed = true;
+            }
+            seen[q.id] = true;
+            // Increment n beyond existing numeric suffix to keep things monotonic
+            var m = /^Q-(\d+)$/.exec(q.id);
+            if (m) { var num = parseInt(m[1], 10); if (num >= n) n = num + 1; }
+        });
+    });
+    return changed;
 }
 
 function _today() { return new Date().toISOString().split("T")[0]; }
@@ -2454,6 +2553,13 @@ function _today() { return new Date().toISOString().split("T")[0]; }
 // Called from renderPanel before rendering templates (or any assessments).
 function _ensureDefaultTemplate() {
     if (!D.questionnaire_templates) D.questionnaire_templates = [];
+    // Heal any existing templates that were created with section-scoped IDs
+    // (pre-fix) and may have duplicate question ids.
+    var healed = false;
+    D.questionnaire_templates.forEach(function(tpl) {
+        if (_normalizeTemplateQuestionIds(tpl)) healed = true;
+    });
+    if (healed) _autoSave();
     if (D.questionnaire_templates.length > 0) return;
     if (typeof TPRM_QUESTIONS === "undefined" || !TPRM_QUESTIONS.length) return;
 
@@ -2492,6 +2598,7 @@ function _ensureDefaultTemplate() {
     };
 
     var sectionMap = {}; // domain → section index
+    var globalQIdx = 0;
     TPRM_QUESTIONS.forEach(function(q) {
         var domain = q.domain || "other";
         if (!sectionMap.hasOwnProperty(domain)) {
@@ -2505,8 +2612,9 @@ function _ensureDefaultTemplate() {
             sectionMap[domain] = tpl.sections.length - 1;
         }
         var section = tpl.sections[sectionMap[domain]];
+        globalQIdx++;
         section.questions.push({
-            id: "Q-" + String(section.questions.length + 1).padStart(3, "0"),
+            id: "Q-" + String(globalQIdx).padStart(3, "0"),
             type: "free_text",
             text: lang === "en" ? (q.text_en || q.text_fr || "") : (q.text_fr || q.text_en || ""),
             description: "",
@@ -2837,7 +2945,7 @@ function addQuestion(tplId, sectionId) {
     if (!section) return;
     if (!section.questions) section.questions = [];
     section.questions.push({
-        id: _nextQuestionId(section),
+        id: _nextQuestionId(tpl),
         type: "free_text",
         text: "",
         description: "",
@@ -2908,6 +3016,1162 @@ function _onOptionChange(tplId, sectionId, questionId, optionIdx, value) {
     _touchTemplate(tpl);
 }
 window._onOptionChange = _onOptionChange;
+
+// ═══════════════════════════════════════════════════════════════
+// ASSESSMENTS V2 (template-driven)
+// ═══════════════════════════════════════════════════════════════
+//
+// Extended assessment data model (stored in D.assessments[], alongside
+// legacy assessments). A template-driven assessment carries:
+//
+//   {
+//     id, vendor_id, type: "periodic",
+//     date, due_date,                                 (new)
+//     template_id, template_version, template_snapshot,  (new — snapshot
+//                                                         is frozen at
+//                                                         creation so the
+//                                                         assessment stays
+//                                                         valid if the
+//                                                         template later
+//                                                         evolves)
+//     status: draft | in_progress | pending_approval | validated | rejected
+//     responses: [                                    (new shape)
+//       {
+//         question_id,
+//         coverage: covered | partial | not_covered | not_applicable,
+//         answer,                                      (type-dependent:
+//                                                       yes_no: "yes"/"no"
+//                                                       scale_1_5: 1..5
+//                                                       single_choice: string
+//                                                       multi_choice: string[]
+//                                                       free_text: string
+//                                                       file_upload: {name,size,hash})
+//         comment,
+//         action_plans: [                              (required when
+//           { id, title, description, target_date, owner, status }
+//         ],
+//         justification                                (optional when
+//                                                       partial/not_covered
+//                                                       and no action plan)
+//       }
+//     ],
+//     self_validation: false,
+//     self_validated_at: null,
+//     score, completion_rate,
+//     approved_at, approved_by, rejected_reason
+//   }
+//
+// Legacy assessments (without template_id) continue to work via the old
+// openAssessment / setAnswer / saveAssessment functions.
+// ═══════════════════════════════════════════════════════════════
+
+var _assessmentV2Returning = null; // vendorIdx to return to after save
+
+function _nextAssessmentId() {
+    var n = (D.assessments || []).length + 1;
+    var id;
+    do {
+        id = "EVAL-" + String(n).padStart(3, "0");
+        n++;
+    } while ((D.assessments || []).some(function(a) { return a.id === id; }));
+    return id;
+}
+
+function _getAssessmentTemplate(a) {
+    if (a.template_snapshot) return a.template_snapshot;
+    if (!a.template_id) return null;
+    return (D.questionnaire_templates || []).find(function(tp) { return tp.id === a.template_id; }) || null;
+}
+
+function _allQuestions(tpl) {
+    if (!tpl || !tpl.sections) return [];
+    var out = [];
+    tpl.sections.forEach(function(s) {
+        (s.questions || []).forEach(function(q) { out.push(Object.assign({}, q, { section_id: s.id, section_title: s.title })); });
+    });
+    return out;
+}
+
+function _newAssessmentFromTemplate(vendorId) {
+    var tplSelect = document.getElementById("na-template");
+    var dueEl = document.getElementById("na-due-date");
+    if (!tplSelect || !dueEl) return;
+    var tplId = tplSelect.value;
+    var tpl = (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
+    if (!tpl) return;
+
+    var assessId = _nextAssessmentId();
+    // Pre-populate responses with empty objects for each question
+    var responses = _allQuestions(tpl).map(function(q) {
+        return {
+            question_id: q.id,
+            coverage: null,
+            answer: q.type === "multi_choice" ? [] : null,
+            comment: "",
+            action_plans: [],
+            justification: ""
+        };
+    });
+
+    D.assessments.push({
+        id: assessId,
+        vendor_id: vendorId,
+        type: "periodic",
+        date: _today(),
+        due_date: dueEl.value || "",
+        template_id: tpl.id,
+        template_version: tpl.version || 1,
+        template_snapshot: JSON.parse(JSON.stringify(tpl)),
+        status: "draft",
+        responses: responses,
+        self_validation: false,
+        self_validated_at: null,
+        score: null,
+        completion_rate: 0
+    });
+    _autoSave();
+    closeModal();
+    if (_selectedVendor !== null) _assessmentV2Returning = _selectedVendor;
+    openAssessmentV2(assessId);
+}
+window._newAssessmentFromTemplate = _newAssessmentFromTemplate;
+
+// ── Renderer ──────────────────────────────────────────────────
+function openAssessmentV2(assessId) {
+    var a = D.assessments.find(function(x) { return x.id === assessId; });
+    if (!a || !a.template_snapshot) { openAssessment(assessId); return; } // legacy path
+    // Recompute stats every time we render — covers cases where the assessment
+    // was touched before the latest stats algorithm change.
+    _touchAssessment(a);
+    var v = D.vendors.find(function(x) { return x.id === a.vendor_id; });
+    var tpl = a.template_snapshot;
+    var qs = _allQuestions(tpl);
+    var totalQ = qs.length;
+
+    var stats = _assessmentStats(a);
+    var answered = stats.answered;
+    var completion = totalQ > 0 ? Math.round((answered / totalQ) * 100) : 0;
+    var score = _computeAssessmentV2Score(a);
+
+    // ── Header ──
+    var h = '<div class="tpl-header">';
+    h += '<button class="btn-add" data-click="_backFromAssessmentV2">&laquo; ' + t("nav.assessments") + '</button>';
+    h += '<h2>' + esc(a.id) + ' — ' + esc(_vendorName(a.vendor_id)) + '</h2>';
+    h += '<span class="tpl-meta">' + esc(tpl.name) + ' v' + (a.template_version || 1) + '</span>';
+    h += '</div>';
+
+    // Status + due date + score
+    h += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:0.82em;color:var(--gray-dark)">';
+    h += '<span>' + esc(t("assessment.status")) + ' <strong class="evalv2-status evalv2-status-' + esc(a.status || "draft") + '">' + esc(t("assessment.status_" + (a.status || "draft"))) + '</strong></span>';
+    if (a.due_date) h += '<span>' + esc(t("assessment.due_date")) + ' <strong>' + esc(a.due_date) + '</strong></span>';
+    h += '<span style="flex:1"></span>';
+    h += '<div class="score-gauge"><span class="score-val ' + _scoreColorClass(score) + '">' + score + '%</span></div>';
+    h += '</div>';
+
+    // Progress
+    h += '<div id="evalv2-progress-wrap" style="margin-bottom:14px">';
+    h += '<div style="display:flex;align-items:center;gap:10px">';
+    h += '<div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden">';
+    h += '<div id="evalv2-progress-bar" style="width:' + completion + '%;height:100%;background:' + (completion === 100 ? 'var(--green)' : 'var(--light-blue)') + ';border-radius:4px;transition:width 0.3s"></div>';
+    h += '</div>';
+    h += '<span id="evalv2-progress-label" style="font-size:0.82em;font-weight:600;color:' + (completion === 100 ? 'var(--green)' : 'var(--gray-dark)') + '">' + completion + '% (' + answered + '/' + totalQ + ')</span>';
+    h += '</div>';
+    // Completeness hints
+    h += '<div id="evalv2-hints">' + _renderAssessmentHints(stats) + '</div>';
+    h += '</div>';
+
+    // Actions toolbar
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
+    h += '<button class="btn-add" data-click="_exportAssessmentJSON" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.export_json")) + '</button>';
+    h += '<button class="btn-add" data-click="_exportAssessmentExcel" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.export_excel")) + '</button>';
+    h += '<button class="btn-add" data-click="_importAssessmentIntoExisting" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.import_response")) + '</button>';
+    h += '<span style="flex:1"></span>';
+    if (a.status === "pending_approval") {
+        h += '<button class="btn-add" style="background:var(--green)" data-click="_approveAssessment" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.approve")) + '</button>';
+        h += '<button class="btn-del" data-click="_rejectAssessment" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.reject")) + '</button>';
+    }
+    h += '</div>';
+
+    // ── Sections + questions ──
+    tpl.sections.forEach(function(section) {
+        h += '<div class="tpl-section">';
+        h += '<div class="tpl-section-header">';
+        h += '<span class="tpl-section-id">' + esc(section.id) + '</span>';
+        h += '<span class="tpl-section-title" style="border:none;font-size:1em;font-weight:700">' + esc(section.title) + '</span>';
+        h += '</div>';
+        if (section.description) {
+            h += '<div style="font-size:0.85em;color:var(--gray-dark);margin-bottom:10px">' + esc(section.description) + '</div>';
+        }
+        (section.questions || []).forEach(function(q) {
+            var resp = (a.responses || []).find(function(r) { return r.question_id === q.id; }) || {};
+            h += _renderAssessmentQuestion(a, section, q, resp);
+        });
+        h += '</div>';
+    });
+
+    // Self-validation
+    var canValidate = completion === 100;
+    var validationBlockStyle = canValidate ? "border-color:var(--light-blue)" : "border-color:var(--gray-light);opacity:0.75";
+    h += '<div id="evalv2-validation-block" class="tpl-section" style="' + validationBlockStyle + '">';
+    h += '<div class="tpl-section-header">';
+    h += '<span class="tpl-section-title" style="border:none;font-size:1em;font-weight:700">' + esc(t("assessment.self_validation_title")) + '</span>';
+    h += '</div>';
+    h += '<p style="font-size:0.85em;color:var(--gray-dark);margin:0 0 10px">' + esc(t("assessment.self_validation_hint")) + '</p>';
+    var cursor = canValidate ? "pointer" : "not-allowed";
+    var labelTitle = canValidate ? "" : ' title="' + esc(t("assessment.complete_all_questions")) + '"';
+    h += '<label id="evalv2-validation-label" style="display:flex;align-items:center;gap:8px;font-size:0.9em;font-weight:600;cursor:' + cursor + '"' + labelTitle + '>';
+    h += '<input type="checkbox" id="evalv2-validation-check"' + (a.self_validation ? " checked" : "") + (canValidate ? "" : " disabled") + ' data-change="_toggleSelfValidation" data-args=\'' + _da(a.id) + '\' data-pass-checked>';
+    h += '<span>' + esc(t("assessment.self_validation_label")) + '</span>';
+    h += '</label>';
+    // Helper text when disabled
+    h += '<div id="evalv2-validation-helper" style="font-size:0.78em;color:var(--orange);margin-top:6px;display:' + (canValidate ? "none" : "block") + '">';
+    h += '&#9888; ' + esc(t("assessment.complete_all_questions"));
+    h += '</div>';
+    if (a.self_validated_at) {
+        h += '<div id="evalv2-validated-on" style="font-size:0.78em;color:var(--gray-dark);margin-top:6px">' + esc(t("assessment.self_validated_on")) + ' ' + esc(a.self_validated_at) + '</div>';
+    }
+    h += '</div>';
+
+    // Footer: Save + Submit for approval
+    h += '<div class="form-actions">';
+    h += '<button class="btn-add" data-click="_backFromAssessmentV2">' + esc(t("common.close")) + '</button>';
+    h += '<span id="evalv2-submit-wrap">' + _renderSubmitButton(a, completion) + '</span>';
+    h += '</div>';
+
+    var c = document.getElementById("content");
+    c.innerHTML = h;
+}
+window.openAssessmentV2 = openAssessmentV2;
+
+function _renderAssessmentQuestion(a, section, q, resp) {
+    var h = '<div class="tpl-question" style="background:white">';
+    // Header
+    h += '<div class="tpl-question-header">';
+    h += '<span class="tpl-question-id">' + esc(q.id) + '</span>';
+    var critClass = "crit-" + (q.criticality || "major");
+    h += '<span class="crit-badge ' + critClass + '">' + esc(t("criticality." + (q.criticality || "major"))) + '</span>';
+    h += '<span class="tpl-question-id" style="min-width:auto;border:none;background:var(--bg-subtle)">' + esc(t("qtype." + (q.type || "free_text"))) + '</span>';
+    h += '</div>';
+    // Question text
+    h += '<div style="font-weight:600;font-size:0.95em;margin:6px 0">' + esc(q.text || "") + '</div>';
+    if (q.expected) {
+        h += '<details style="margin-bottom:8px"><summary style="font-size:0.78em;color:var(--light-blue);cursor:pointer">' + esc(t("assessment.expected")) + '</summary>';
+        h += '<div style="font-size:0.82em;color:var(--gray-dark);padding:6px 0">' + esc(q.expected) + '</div>';
+        h += '</details>';
+    }
+    // Type-specific input
+    h += _renderAnswerInput(a.id, q, resp);
+    // Coverage pills
+    h += '<div style="margin-top:10px">';
+    h += '<div style="font-size:0.74em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:4px">' + esc(t("assessment.coverage")) + '</div>';
+    h += '<div class="answer-pills">';
+    ["covered", "partial", "not_covered", "not_applicable"].forEach(function(cov) {
+        var sel = resp.coverage === cov ? " selected" : "";
+        var cls = cov === "covered" ? "compliant" : (cov === "partial" ? "partial" : (cov === "not_covered" ? "non_compliant" : ""));
+        h += '<div class="answer-pill ' + cls + sel + '" data-click="_setCoverage" data-args=\'' + _da(a.id, q.id, cov) + '\'>' + esc(t("coverage." + cov)) + '</div>';
+    });
+    h += '</div>';
+    h += '</div>';
+    // Comment
+    h += '<div style="margin-top:8px">';
+    h += '<textarea rows="2" class="tpl-question-expected" placeholder="' + esc(t("assessment.comment")) + '" data-input="_onAssessmentCommentChange" data-args=\'' + _da(a.id, q.id) + '\' data-pass-value>' + esc(resp.comment || "") + '</textarea>';
+    h += '</div>';
+    // Action plans (only when partial / not_covered)
+    if (resp.coverage === "partial" || resp.coverage === "not_covered") {
+        var hasAction = (resp.action_plans && resp.action_plans.length > 0 &&
+            resp.action_plans.some(function(ap) { return (ap.title || "").trim().length > 0; }));
+        var hasJust = (resp.justification || "").trim().length > 0;
+        var satisfied = hasAction || hasJust;
+        var blockColor = satisfied ? "var(--green)" : "var(--orange)";
+        var blockBg = satisfied ? "#ecfdf5" : "#fff7ed";
+        h += '<div id="actionblk-' + esc(a.id) + '-' + esc(q.id) + '" style="margin-top:10px;padding:12px;background:' + blockBg + ';border-radius:4px;border-left:4px solid ' + blockColor + '">';
+        // Explicit banner
+        if (!satisfied) {
+            h += '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">';
+            h += '<span style="color:var(--orange);font-size:1.1em;line-height:1">&#9888;</span>';
+            h += '<div>';
+            h += '<div style="font-size:0.85em;font-weight:700;color:#7c2d12">' + esc(t("assessment.action_required_title")) + '</div>';
+            h += '<div style="font-size:0.78em;color:#7c2d12;margin-top:2px">' + esc(resp.coverage === "partial" ? t("assessment.action_required_partial") : t("assessment.action_required_not_covered")) + '</div>';
+            h += '</div>';
+            h += '</div>';
+        } else {
+            h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#166534;font-size:0.82em;font-weight:600">';
+            h += '<span>&#10003;</span>';
+            h += esc(hasAction ? t("assessment.action_recorded") : t("assessment.justification_recorded"));
+            h += '</div>';
+        }
+        // Action list
+        if (resp.action_plans && resp.action_plans.length) {
+            h += '<div style="font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:6px">' + esc(t("assessment.action_plan_required")) + '</div>';
+            resp.action_plans.forEach(function(ap, api) {
+                h += _renderActionPlanForm(a.id, q.id, ap, api);
+            });
+        }
+        h += '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">';
+        h += '<button class="btn-add" style="background:' + (satisfied ? "var(--light-blue)" : "var(--orange)") + ';margin:0" data-click="_addActionPlan" data-args=\'' + _da(a.id, q.id) + '\'>+ ' + esc(t("assessment.add_action_plan")) + '</button>';
+        h += '</div>';
+        // Justification (alternative)
+        h += '<div style="margin-top:10px">';
+        h += '<label style="font-size:0.78em;font-weight:600;color:var(--gray-dark);display:block;margin-bottom:3px">' + esc(t("assessment.justification_or")) + '</label>';
+        h += '<textarea rows="2" class="tpl-question-expected" placeholder="' + esc(t("assessment.justification_placeholder")) + '" data-input="_onAssessmentJustificationChange" data-args=\'' + _da(a.id, q.id) + '\' data-pass-value>' + esc(resp.justification || "") + '</textarea>';
+        h += '</div>';
+        h += '</div>';
+    }
+    h += '</div>';
+    return h;
+}
+
+function _renderAnswerInput(assessId, q, resp) {
+    var h = '';
+    var val = resp.answer;
+    if (q.type === "yes_no") {
+        h += '<div class="answer-pills">';
+        ["yes", "no"].forEach(function(yn) {
+            var sel = val === yn ? " selected" : "";
+            h += '<div class="answer-pill' + sel + '" data-click="_setAnswerV2" data-args=\'' + _da(assessId, q.id, yn) + '\'>' + esc(t("answer." + yn)) + '</div>';
+        });
+        h += '</div>';
+    } else if (q.type === "scale_1_5") {
+        h += '<div class="answer-pills">';
+        [1, 2, 3, 4, 5].forEach(function(n) {
+            var sel = Number(val) === n ? " selected" : "";
+            h += '<div class="answer-pill' + sel + '" data-click="_setAnswerV2" data-args=\'' + _da(assessId, q.id, n) + '\'>' + n + '</div>';
+        });
+        h += '</div>';
+    } else if (q.type === "single_choice") {
+        h += '<div class="answer-pills" style="flex-wrap:wrap">';
+        (q.options || []).forEach(function(opt) {
+            var sel = val === opt ? " selected" : "";
+            h += '<div class="answer-pill' + sel + '" data-click="_setAnswerV2" data-args=\'' + _da(assessId, q.id, opt) + '\'>' + esc(opt) + '</div>';
+        });
+        h += '</div>';
+    } else if (q.type === "multi_choice") {
+        var arr = Array.isArray(val) ? val : [];
+        h += '<div class="answer-pills" style="flex-wrap:wrap">';
+        (q.options || []).forEach(function(opt) {
+            var sel = arr.indexOf(opt) >= 0 ? " selected" : "";
+            h += '<div class="answer-pill' + sel + '" data-click="_toggleAnswerMulti" data-args=\'' + _da(assessId, q.id, opt) + '\'>' + esc(opt) + '</div>';
+        });
+        h += '</div>';
+    } else if (q.type === "free_text") {
+        h += '<textarea rows="3" class="tpl-question-text" placeholder="' + esc(t("assessment.your_answer")) + '" data-input="_setAnswerV2Text" data-args=\'' + _da(assessId, q.id) + '\' data-pass-value>' + esc(val || "") + '</textarea>';
+    } else if (q.type === "file_upload") {
+        if (val && val.name) {
+            h += '<div style="font-size:0.85em;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;gap:8px">';
+            h += '<span>&#x1F4CE;</span><span style="flex:1">' + esc(val.name) + '</span>';
+            h += '<span style="color:var(--gray-dark);font-size:0.82em">' + Math.round((val.size || 0) / 1024) + ' Ko</span>';
+            h += '<button class="tpl-icon-btn danger" data-click="_clearAnswerFile" data-args=\'' + _da(assessId, q.id) + '\'>&times;</button>';
+            h += '</div>';
+        } else {
+            h += '<input type="file" data-change="_uploadAnswerFile" data-args=\'' + _da(assessId, q.id) + '\' data-pass-el style="font-size:0.85em">';
+        }
+    }
+    return h;
+}
+
+function _renderActionPlanForm(assessId, qId, ap, api) {
+    var h = '<div style="background:white;border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px">';
+    h += '<div style="display:flex;gap:6px;margin-bottom:6px">';
+    h += '<input type="text" value="' + esc(ap.title || "") + '" placeholder="' + esc(t("assessment.ap_title")) + '" style="flex:1;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "title") + '\' data-pass-value>';
+    h += '<input type="date" value="' + esc(ap.target_date || "") + '" style="padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "target_date") + '\' data-pass-value>';
+    h += '<input type="text" value="' + esc(ap.owner || "") + '" placeholder="' + esc(t("assessment.ap_owner")) + '" style="width:120px;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "owner") + '\' data-pass-value>';
+    h += '<button class="tpl-icon-btn danger" data-click="_removeActionPlan" data-args=\'' + _da(assessId, qId, api) + '\' title="' + esc(t("common.delete")) + '">&times;</button>';
+    h += '</div>';
+    h += '<textarea rows="2" placeholder="' + esc(t("assessment.ap_description")) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em;font-family:inherit;box-sizing:border-box;resize:vertical" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "description") + '\' data-pass-value>' + esc(ap.description || "") + '</textarea>';
+    h += '</div>';
+    return h;
+}
+
+// ── Handlers ──────────────────────────────────────────────────
+function _findAssessment(assessId) {
+    return (D.assessments || []).find(function(a) { return a.id === assessId; });
+}
+
+function _findAssessmentResp(a, questionId) {
+    if (!a || !a.responses) return null;
+    return a.responses.find(function(r) { return r.question_id === questionId; });
+}
+
+function _renderSubmitButton(a, completion) {
+    var canSubmit = a.self_validation && completion === 100 && a.status !== "validated" && a.status !== "pending_approval";
+    var reason = "";
+    if (a.status === "validated") reason = t("assessment.already_validated");
+    else if (a.status === "pending_approval") reason = t("assessment.already_submitted");
+    else if (completion < 100) reason = t("assessment.complete_all_questions");
+    else if (!a.self_validation) reason = t("assessment.check_self_validation");
+    if (canSubmit) {
+        return '<button class="btn-add" style="background:var(--light-blue)" data-click="_submitForApproval" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.submit_for_approval")) + '</button>';
+    }
+    return '<button class="btn-add" style="background:var(--gray-light);color:var(--gray-dark);cursor:not-allowed" disabled data-tooltip="' + esc(reason) + '" title="' + esc(reason) + '">' + esc(t("assessment.submit_for_approval")) + '</button>';
+}
+
+function _renderAssessmentHints(stats) {
+    if (stats.missingCoverage === 0 && stats.missingActionPlan === 0) return "";
+    var h = '<div style="font-size:0.8em;margin-top:6px;padding:8px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:4px;color:#7c2d12">';
+    if (stats.missingCoverage > 0) {
+        h += '<div style="margin-bottom:' + (stats.missingActionPlan > 0 ? "4px" : "0") + '">';
+        h += '<span style="font-weight:700">&#9888; ' + stats.missingCoverage + ' ' + esc(t("assessment.without_coverage")) + '</span>';
+        h += '</div>';
+    }
+    if (stats.missingActionPlan > 0) {
+        h += '<div>';
+        h += '<span style="font-weight:700">&#9888; ' + stats.missingActionPlan + ' ' + esc(t("assessment.without_action_plan_long")) + '</span>';
+        h += '</div>';
+    }
+    h += '</div>';
+    return h;
+}
+
+// Stats for an assessment — unique source of truth used everywhere.
+function _assessmentStats(a) {
+    var total = (a.responses || []).length;
+    var answered = 0, missingCoverage = 0, missingActionPlan = 0;
+    (a.responses || []).forEach(function(r) {
+        if (!r.coverage) { missingCoverage++; return; }
+        if (r.coverage === "covered" || r.coverage === "not_applicable") { answered++; return; }
+        if (r.coverage === "partial" || r.coverage === "not_covered") {
+            var hasAction = (r.action_plans && r.action_plans.length > 0 &&
+                r.action_plans.some(function(ap) { return (ap.title || "").trim().length > 0; }));
+            var hasJust = (r.justification || "").trim().length > 0;
+            if (hasAction || hasJust) answered++;
+            else missingActionPlan++;
+        }
+    });
+    return { total: total, answered: answered, missingCoverage: missingCoverage, missingActionPlan: missingActionPlan };
+}
+
+// Heal the template snapshot of an assessment that was created with
+// section-scoped (duplicated) question IDs. Must remap responses so that
+// coverage/answers stay attached to the right question.
+function _healAssessmentQuestionIds(a) {
+    if (!a || !a.template_snapshot || !a.template_snapshot.sections) return;
+    // Collect (sectionId, oldIdx) → oldId mapping, then renormalize, then remap.
+    var oldIds = [];
+    a.template_snapshot.sections.forEach(function(s) {
+        (s.questions || []).forEach(function(q) { oldIds.push(q.id); });
+    });
+    var changed = _normalizeTemplateQuestionIds(a.template_snapshot);
+    if (!changed) return;
+    var newIds = [];
+    a.template_snapshot.sections.forEach(function(s) {
+        (s.questions || []).forEach(function(q) { newIds.push(q.id); });
+    });
+    // Build mapping by position (they are iterated in the same order)
+    var map = {};
+    for (var i = 0; i < oldIds.length; i++) map[oldIds[i]] = newIds[i];
+    // Responses might have duplicate entries for the same old id. Keep the
+    // first non-empty one for each new id.
+    var remapped = {};
+    (a.responses || []).forEach(function(r) {
+        var newId = map[r.question_id] || r.question_id;
+        if (!remapped[newId]) { remapped[newId] = Object.assign({}, r, { question_id: newId }); }
+    });
+    a.responses = newIds.map(function(nid) {
+        return remapped[nid] || {
+            question_id: nid, coverage: null, answer: null,
+            comment: "", action_plans: [], justification: ""
+        };
+    });
+}
+
+function _touchAssessment(a) {
+    _healAssessmentQuestionIds(a);
+    var stats = _assessmentStats(a);
+    a.completion_rate = stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0;
+    a.score = _computeAssessmentV2Score(a);
+    if (a.completion_rate > 0 && a.status === "draft") a.status = "in_progress";
+    _autoSave();
+}
+
+function _setCoverage(assessId, questionId, coverage) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.coverage = coverage;
+    if (coverage === "covered" || coverage === "not_applicable") {
+        resp.action_plans = [];
+        resp.justification = "";
+    }
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._setCoverage = _setCoverage;
+
+function _setAnswerV2(assessId, questionId, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.answer = value;
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._setAnswerV2 = _setAnswerV2;
+
+function _setAnswerV2Text(assessId, questionId, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.answer = value;
+    _refreshAssessmentLiveState(assessId, questionId);
+}
+window._setAnswerV2Text = _setAnswerV2Text;
+
+function _toggleAnswerMulti(assessId, questionId, option) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    if (!Array.isArray(resp.answer)) resp.answer = [];
+    var idx = resp.answer.indexOf(option);
+    if (idx >= 0) resp.answer.splice(idx, 1);
+    else resp.answer.push(option);
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._toggleAnswerMulti = _toggleAnswerMulti;
+
+function _uploadAnswerFile(assessId, questionId, el) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp || !el.files || !el.files[0]) return;
+    var file = el.files[0];
+    if (file.size > 500 * 1024) {
+        alert(t("assessment.file_too_large"));
+        el.value = "";
+        return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var b64 = "";
+        try {
+            var bytes = new Uint8Array(e.target.result);
+            var binary = "";
+            for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            b64 = btoa(binary);
+        } catch (err) { b64 = ""; }
+        resp.answer = { name: file.name, size: file.size, data: b64 };
+        _touchAssessment(a);
+        openAssessmentV2(assessId);
+    };
+    reader.readAsArrayBuffer(file);
+}
+window._uploadAnswerFile = _uploadAnswerFile;
+
+function _clearAnswerFile(assessId, questionId) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.answer = null;
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._clearAnswerFile = _clearAnswerFile;
+
+// Live-update the parts of the DOM that depend on completion without
+// re-rendering the whole panel (to preserve input focus while typing).
+function _refreshAssessmentLiveState(assessId, questionId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    _touchAssessment(a);
+    var stats = _assessmentStats(a);
+    var completion = stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0;
+
+    // 1. Progress bar + label
+    var bar = document.getElementById("evalv2-progress-bar");
+    var label = document.getElementById("evalv2-progress-label");
+    if (bar) {
+        bar.style.width = completion + "%";
+        bar.style.background = completion === 100 ? "var(--green)" : "var(--light-blue)";
+    }
+    if (label) {
+        label.textContent = completion + "% (" + stats.answered + "/" + stats.total + ")";
+        label.style.color = completion === 100 ? "var(--green)" : "var(--gray-dark)";
+    }
+    var hints = document.getElementById("evalv2-hints");
+    if (hints) hints.innerHTML = _renderAssessmentHints(stats);
+
+    // 2. Single question action block: update background + banner
+    if (questionId) {
+        var resp = _findAssessmentResp(a, questionId);
+        var block = document.getElementById("actionblk-" + a.id + "-" + questionId);
+        if (resp && block && (resp.coverage === "partial" || resp.coverage === "not_covered")) {
+            var hasAction = (resp.action_plans && resp.action_plans.length > 0 &&
+                resp.action_plans.some(function(ap) { return (ap.title || "").trim().length > 0; }));
+            var hasJust = (resp.justification || "").trim().length > 0;
+            var satisfied = hasAction || hasJust;
+            block.style.background = satisfied ? "#ecfdf5" : "#fff7ed";
+            block.style.borderLeftColor = satisfied ? "var(--green)" : "var(--orange)";
+            // Replace the banner (first child is always the banner div)
+            var banner = block.firstElementChild;
+            if (banner) {
+                if (satisfied) {
+                    banner.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#166534;font-size:0.82em;font-weight:600">'
+                        + '<span>&#10003;</span>'
+                        + esc(hasAction ? t("assessment.action_recorded") : t("assessment.justification_recorded"))
+                        + '</div>';
+                } else {
+                    banner.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">'
+                        + '<span style="color:var(--orange);font-size:1.1em;line-height:1">&#9888;</span>'
+                        + '<div>'
+                        + '<div style="font-size:0.85em;font-weight:700;color:#7c2d12">' + esc(t("assessment.action_required_title")) + '</div>'
+                        + '<div style="font-size:0.78em;color:#7c2d12;margin-top:2px">' + esc(resp.coverage === "partial" ? t("assessment.action_required_partial") : t("assessment.action_required_not_covered")) + '</div>'
+                        + '</div>'
+                        + '</div>';
+                }
+            }
+        }
+    }
+
+    // 3. Self-validation checkbox: enable/disable based on completion
+    var check = document.getElementById("evalv2-validation-check");
+    var checkLabel = document.getElementById("evalv2-validation-label");
+    var checkHelper = document.getElementById("evalv2-validation-helper");
+    var validationBlock = document.getElementById("evalv2-validation-block");
+    if (check && checkLabel && checkHelper && validationBlock) {
+        if (completion === 100) {
+            check.disabled = false;
+            checkLabel.style.cursor = "pointer";
+            checkLabel.removeAttribute("title");
+            checkHelper.style.display = "none";
+            validationBlock.style.borderColor = "var(--light-blue)";
+            validationBlock.style.opacity = "1";
+        } else {
+            check.disabled = true;
+            // If the user had it checked but now completion dropped, uncheck it
+            if (check.checked) {
+                check.checked = false;
+                a.self_validation = false;
+                a.self_validated_at = null;
+                _autoSave();
+            }
+            checkLabel.style.cursor = "not-allowed";
+            checkLabel.setAttribute("title", t("assessment.complete_all_questions"));
+            checkHelper.style.display = "block";
+            validationBlock.style.borderColor = "var(--gray-light)";
+            validationBlock.style.opacity = "0.75";
+        }
+    }
+
+    // 4. Submit button
+    var submitWrap = document.getElementById("evalv2-submit-wrap");
+    if (submitWrap) submitWrap.innerHTML = _renderSubmitButton(a, completion);
+}
+
+function _onAssessmentCommentChange(assessId, questionId, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.comment = value;
+    _autoSave();
+    // comment doesn't affect completion, no live refresh needed
+}
+window._onAssessmentCommentChange = _onAssessmentCommentChange;
+
+function _onAssessmentJustificationChange(assessId, questionId, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.justification = value;
+    _refreshAssessmentLiveState(assessId, questionId);
+}
+window._onAssessmentJustificationChange = _onAssessmentJustificationChange;
+
+function _addActionPlan(assessId, questionId) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    if (!resp.action_plans) resp.action_plans = [];
+    resp.action_plans.push({
+        id: "AP-" + String(resp.action_plans.length + 1).padStart(3, "0"),
+        title: "",
+        description: "",
+        target_date: "",
+        owner: "",
+        status: "proposed"
+    });
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._addActionPlan = _addActionPlan;
+
+function _removeActionPlan(assessId, questionId, apIdx) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp || !resp.action_plans) return;
+    resp.action_plans.splice(apIdx, 1);
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._removeActionPlan = _removeActionPlan;
+
+function _updateActionPlanField(assessId, questionId, apIdx, field, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp || !resp.action_plans || !resp.action_plans[apIdx]) return;
+    resp.action_plans[apIdx][field] = value;
+    _refreshAssessmentLiveState(assessId, questionId);
+}
+window._updateActionPlanField = _updateActionPlanField;
+
+function _toggleSelfValidation(assessId, checked) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    a.self_validation = !!checked;
+    a.self_validated_at = checked ? new Date().toISOString() : null;
+    _autoSave();
+    openAssessmentV2(assessId);
+}
+window._toggleSelfValidation = _toggleSelfValidation;
+
+function _submitForApproval(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    if (!a.self_validation) { alert(t("assessment.self_validation_required")); return; }
+    a.status = "pending_approval";
+    a.submitted_at = new Date().toISOString();
+    _autoSave();
+    showStatus(t("assessment.submitted"));
+    _backFromAssessmentV2();
+}
+window._submitForApproval = _submitForApproval;
+
+function _approveAssessment(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    a.status = "validated";
+    a.approved_at = new Date().toISOString();
+    // Create vendor action plan items from approved responses
+    _materializeActionPlans(a);
+    // Update vendor's maturity score
+    var v = D.vendors.find(function(x) { return x.id === a.vendor_id; });
+    if (v && a.score != null) {
+        if (!v.exposure) v.exposure = {};
+        v.exposure.maturite = _scoreToMaturite(a.score);
+    }
+    _autoSave();
+    openAssessmentV2(assessId);
+    showStatus(t("assessment.approved"));
+}
+window._approveAssessment = _approveAssessment;
+
+function _rejectAssessment(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var reason = prompt(t("assessment.reject_reason_prompt"));
+    if (reason === null) return;
+    a.status = "rejected";
+    a.rejected_reason = reason || "";
+    _autoSave();
+    openAssessmentV2(assessId);
+    showStatus(t("assessment.rejected"));
+}
+window._rejectAssessment = _rejectAssessment;
+
+function _materializeActionPlans(a) {
+    // For every action plan in the approved assessment, add a measure to the vendor
+    var v = D.vendors.find(function(x) { return x.id === a.vendor_id; });
+    if (!v) return;
+    if (!v.measures) v.measures = [];
+    (a.responses || []).forEach(function(r) {
+        (r.action_plans || []).forEach(function(ap) {
+            var existingId = v.id + "-AP-" + r.question_id + "-" + ap.id;
+            if (v.measures.some(function(m) { return m.id === existingId; })) return;
+            v.measures.push({
+                id: existingId,
+                mesure: ap.title || ("Action plan " + r.question_id),
+                details: ap.description || "",
+                type: "Organisationnelle",
+                responsable: ap.owner || "",
+                echeance: ap.target_date || "",
+                statut: "planifie",
+                source: "vendor_engagement",
+                source_assessment_id: a.id,
+                source_question_id: r.question_id
+            });
+        });
+    });
+}
+
+function _backFromAssessmentV2() {
+    if (_assessmentV2Returning !== null) {
+        _selectedVendor = _assessmentV2Returning;
+        _vendorTab = "assessments";
+        _assessmentV2Returning = null;
+    }
+    _panel = "vendors";
+    renderPanel();
+}
+window._backFromAssessmentV2 = _backFromAssessmentV2;
+
+// ── Scoring V2 ────────────────────────────────────────────────
+function _computeAssessmentV2Score(a) {
+    var tpl = _getAssessmentTemplate(a);
+    if (!tpl) return 0;
+    var qs = _allQuestions(tpl);
+    var total = 0, max = 0;
+    (a.responses || []).forEach(function(r) {
+        if (r.coverage === "not_applicable") return;
+        var q = qs.find(function(x) { return x.id === r.question_id; });
+        if (!q) return;
+        var w = q.weight || 1;
+        max += w;
+        if (r.coverage === "covered") total += w;
+        else if (r.coverage === "partial") total += w * 0.5;
+        // not_covered or null → 0
+    });
+    return max > 0 ? Math.round((total / max) * 100) : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ASSESSMENTS V2 — EXPORT / IMPORT
+// ═══════════════════════════════════════════════════════════════
+
+function _buildExportPayload(a) {
+    // Only export what is strictly needed by the vendor to fill in the questionnaire.
+    // Keeps the payload minimal and auditable.
+    return {
+        format: "ciso_toolbox_vendor_assessment",
+        version: 1,
+        assessment_id: a.id,
+        vendor_id: a.vendor_id,
+        vendor_name: _vendorName(a.vendor_id),
+        date: a.date,
+        due_date: a.due_date || "",
+        template: a.template_snapshot,
+        responses: a.responses || [],
+        exported_at: new Date().toISOString()
+    };
+}
+
+function _exportAssessmentJSON(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var payload = _buildExportPayload(a);
+    var json = JSON.stringify(payload, null, 2);
+
+    _showModal(
+        '<h3>' + esc(t("assessment.export_json_title")) + '</h3>' +
+        '<p style="font-size:0.85em;color:var(--gray-dark);margin-bottom:10px">' + esc(t("assessment.export_json_hint")) + '</p>' +
+        '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.encryption_password")) + '</label>' +
+        '<input type="password" id="exp-password" placeholder="' + esc(t("assessment.encryption_password_hint")) + '" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:10px">' +
+        '<div style="display:flex;gap:8px">' +
+        '<button class="btn-add" style="flex:1" data-click="_doExportJSON" data-args=\'' + _da(assessId, false) + '\'>' + esc(t("assessment.export_plain")) + '</button>' +
+        '<button class="btn-add" style="flex:1;background:var(--light-blue)" data-click="_doExportJSON" data-args=\'' + _da(assessId, true) + '\'>' + esc(t("assessment.export_encrypted")) + '</button>' +
+        '</div>'
+    );
+}
+window._exportAssessmentJSON = _exportAssessmentJSON;
+
+function _doExportJSON(assessId, encrypted) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var payload = _buildExportPayload(a);
+    var json = JSON.stringify(payload, null, 2);
+    var baseName = (a.id + "_" + _vendorName(a.vendor_id).replace(/\s+/g, "_") + "_questionnaire").replace(/[^a-z0-9_.-]/gi, "");
+
+    if (encrypted) {
+        var pwd = (document.getElementById("exp-password") || {}).value || "";
+        if (!pwd) { alert(t("assessment.password_required")); return; }
+        _encryptData(json, pwd).then(function(buf) {
+            var blob = new Blob([buf], { type: "application/octet-stream" });
+            _triggerDownload(blob, baseName + ".ctenc");
+            closeModal();
+            showStatus(t("assessment.exported"));
+        }).catch(function(e) { alert("Encryption failed: " + e.message); });
+    } else {
+        var blob = new Blob([json], { type: "application/json" });
+        _triggerDownload(blob, baseName + ".json");
+        closeModal();
+        showStatus(t("assessment.exported"));
+    }
+}
+window._doExportJSON = _doExportJSON;
+
+function _triggerDownload(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+}
+
+function _exportAssessmentExcel(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var tpl = _getAssessmentTemplate(a);
+    if (!tpl) return;
+    _loadExcelJS().then(function() {
+        var wb = new ExcelJS.Workbook();
+        // Sheet 1: Instructions
+        var ws1 = wb.addWorksheet(t("assessment.instructions_sheet"));
+        ws1.columns = [{ width: 100 }];
+        [
+            t("assessment.instructions_line1"),
+            "",
+            t("assessment.instructions_line2"),
+            t("assessment.instructions_line3"),
+            t("assessment.instructions_line4"),
+            t("assessment.instructions_line5"),
+            "",
+            t("assessment.instructions_line6"),
+            "",
+            t("assessment.instructions_coverage_covered"),
+            t("assessment.instructions_coverage_partial"),
+            t("assessment.instructions_coverage_not_covered"),
+            t("assessment.instructions_coverage_not_applicable"),
+            "",
+            t("assessment.instructions_id") + ": " + a.id,
+            t("assessment.instructions_vendor") + ": " + _vendorName(a.vendor_id),
+            t("assessment.instructions_template") + ": " + tpl.name + " v" + (a.template_version || 1),
+            t("assessment.instructions_due_date") + ": " + (a.due_date || "-")
+        ].forEach(function(line) { ws1.addRow([line]); });
+        ws1.getRow(1).font = { bold: true, size: 14 };
+
+        // Sheet 2: Questionnaire
+        var ws2 = wb.addWorksheet(t("assessment.questionnaire_sheet"));
+        ws2.columns = [
+            { header: "ID", key: "id", width: 10 },
+            { header: t("assessment.col_section"), key: "section", width: 22 },
+            { header: t("assessment.col_question"), key: "question", width: 50 },
+            { header: t("assessment.col_type"), key: "type", width: 14 },
+            { header: t("assessment.col_options"), key: "options", width: 30 },
+            { header: t("assessment.col_expected"), key: "expected", width: 40 },
+            { header: t("assessment.col_answer"), key: "answer", width: 30 },
+            { header: t("assessment.col_coverage"), key: "coverage", width: 14 },
+            { header: t("assessment.col_comment"), key: "comment", width: 30 },
+            { header: t("assessment.col_ap_title"), key: "ap_title", width: 30 },
+            { header: t("assessment.col_ap_desc"), key: "ap_desc", width: 30 },
+            { header: t("assessment.col_ap_date"), key: "ap_date", width: 14 },
+            { header: t("assessment.col_ap_owner"), key: "ap_owner", width: 20 },
+            { header: t("assessment.col_justification"), key: "justification", width: 30 }
+        ];
+        ws2.getRow(1).font = { bold: true };
+        ws2.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
+        ws2.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+
+        (tpl.sections || []).forEach(function(section) {
+            (section.questions || []).forEach(function(q) {
+                var r = _findAssessmentResp(a, q.id) || {};
+                var firstAp = (r.action_plans && r.action_plans[0]) || {};
+                var answerStr = "";
+                if (Array.isArray(r.answer)) answerStr = r.answer.join("; ");
+                else if (r.answer && typeof r.answer === "object" && r.answer.name) answerStr = r.answer.name;
+                else if (r.answer != null) answerStr = String(r.answer);
+                ws2.addRow({
+                    id: q.id,
+                    section: section.title,
+                    question: q.text,
+                    type: q.type,
+                    options: (q.options || []).join(" | "),
+                    expected: q.expected || "",
+                    answer: answerStr,
+                    coverage: r.coverage || "",
+                    comment: r.comment || "",
+                    ap_title: firstAp.title || "",
+                    ap_desc: firstAp.description || "",
+                    ap_date: firstAp.target_date || "",
+                    ap_owner: firstAp.owner || "",
+                    justification: r.justification || ""
+                });
+            });
+        });
+
+        // Sheet 3: Self validation
+        var ws3 = wb.addWorksheet(t("assessment.self_validation_sheet"));
+        ws3.columns = [{ width: 80 }];
+        ws3.addRow([t("assessment.self_validation_title")]);
+        ws3.addRow([t("assessment.self_validation_hint")]);
+        ws3.addRow([""]);
+        ws3.addRow([t("assessment.self_validation_check_label") + ": [   ]  " + t("assessment.self_validation_tick_hint")]);
+        ws3.getRow(1).font = { bold: true, size: 14 };
+
+        wb.xlsx.writeBuffer().then(function(buf) {
+            var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            var baseName = (a.id + "_" + _vendorName(a.vendor_id).replace(/\s+/g, "_") + "_questionnaire").replace(/[^a-z0-9_.-]/gi, "");
+            _triggerDownload(blob, baseName + ".xlsx");
+            showStatus(t("assessment.exported"));
+        });
+    }).catch(function(e) { alert("Excel export failed: " + e.message); });
+}
+window._exportAssessmentExcel = _exportAssessmentExcel;
+
+// ── Import ───────────────────────────────────────────────────
+function _importAssessmentResponse(vendorId) {
+    closeModal();
+    _pickAssessmentFile(null, vendorId);
+}
+window._importAssessmentResponse = _importAssessmentResponse;
+
+function _importAssessmentIntoExisting(assessId) {
+    _pickAssessmentFile(assessId, null);
+}
+window._importAssessmentIntoExisting = _importAssessmentIntoExisting;
+
+function _pickAssessmentFile(existingAssessId, vendorId) {
+    var fi = document.createElement("input");
+    fi.type = "file";
+    fi.accept = ".json,.ctenc,.xlsx";
+    fi.onchange = function() {
+        if (!fi.files[0]) return;
+        var file = fi.files[0];
+        var name = file.name.toLowerCase();
+        if (name.endsWith(".ctenc")) {
+            _promptPasswordAndDecrypt(file, function(text) {
+                _handleImportedJSON(text, existingAssessId, vendorId);
+            });
+        } else if (name.endsWith(".json")) {
+            var reader = new FileReader();
+            reader.onload = function(e) { _handleImportedJSON(e.target.result, existingAssessId, vendorId); };
+            reader.readAsText(file);
+        } else if (name.endsWith(".xlsx")) {
+            _handleImportedExcel(file, existingAssessId, vendorId);
+        } else {
+            alert(t("assessment.unsupported_format"));
+        }
+    };
+    fi.click();
+}
+
+function _promptPasswordAndDecrypt(file, onSuccess) {
+    var pwd = prompt(t("assessment.decryption_password"));
+    if (pwd === null) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        _decryptData(e.target.result, pwd).then(onSuccess).catch(function() {
+            alert(t("assessment.decryption_failed"));
+        });
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function _handleImportedJSON(text, existingAssessId, vendorId) {
+    var payload;
+    try { payload = JSON.parse(text); }
+    catch (e) { alert(t("assessment.invalid_json")); return; }
+    if (!payload || payload.format !== "ciso_toolbox_vendor_assessment") {
+        alert(t("assessment.invalid_payload"));
+        return;
+    }
+    _applyImportedPayload(payload, existingAssessId, vendorId);
+}
+
+function _applyImportedPayload(payload, existingAssessId, vendorId) {
+    var a;
+    if (existingAssessId) {
+        a = _findAssessment(existingAssessId);
+        if (!a) { alert("Assessment not found"); return; }
+    } else {
+        // Look up by payload assessment_id first
+        a = _findAssessment(payload.assessment_id);
+        if (!a) {
+            // Create a new assessment anchored to the vendor
+            var targetVendor = vendorId || payload.vendor_id;
+            a = {
+                id: _nextAssessmentId(),
+                vendor_id: targetVendor,
+                type: "periodic",
+                date: payload.date || _today(),
+                due_date: payload.due_date || "",
+                template_id: payload.template && payload.template.id,
+                template_version: payload.template && payload.template.version,
+                template_snapshot: payload.template,
+                status: "pending_approval",
+                responses: [],
+                self_validation: true,
+                self_validated_at: payload.exported_at || new Date().toISOString(),
+                score: null,
+                completion_rate: 0
+            };
+            D.assessments.push(a);
+        }
+    }
+    // Merge responses from payload
+    a.responses = (payload.responses || []).map(function(r) { return JSON.parse(JSON.stringify(r)); });
+    a.status = "pending_approval";
+    if (!a.template_snapshot && payload.template) a.template_snapshot = payload.template;
+    _touchAssessment(a);
+    showStatus(t("assessment.imported"));
+    if (_selectedVendor !== null) _assessmentV2Returning = _selectedVendor;
+    openAssessmentV2(a.id);
+}
+
+function _handleImportedExcel(file, existingAssessId, vendorId) {
+    _loadExcelJS().then(function() {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var wb = new ExcelJS.Workbook();
+            wb.xlsx.load(e.target.result).then(function() {
+                var ws = wb.getWorksheet(t("assessment.questionnaire_sheet")) || wb.worksheets.find(function(w) { return w.rowCount > 1; });
+                if (!ws) { alert(t("assessment.invalid_excel")); return; }
+                // Build a responses array by matching header row
+                var headers = [];
+                ws.getRow(1).eachCell(function(cell, col) { headers[col] = String(cell.value || "").toLowerCase(); });
+                var idCol = headers.findIndex(function(h) { return h === "id"; });
+                if (idCol < 0) { alert(t("assessment.invalid_excel")); return; }
+                // Build response map
+                var respByQ = {};
+                for (var r = 2; r <= ws.rowCount; r++) {
+                    var row = ws.getRow(r);
+                    var qid = row.getCell(idCol).value;
+                    if (!qid) continue;
+                    respByQ[String(qid)] = {
+                        coverage: _normalizeCoverage(row.getCell(headers.indexOf("coverage")).value),
+                        answer: row.getCell(headers.indexOf("answer")).value,
+                        comment: String(row.getCell(headers.indexOf("comment")).value || ""),
+                        justification: String(row.getCell(headers.indexOf("justification")).value || ""),
+                        action_plans: []
+                    };
+                    var apTitle = row.getCell(headers.indexOf("ap_title")).value;
+                    if (apTitle) {
+                        respByQ[String(qid)].action_plans.push({
+                            id: "AP-001",
+                            title: String(apTitle),
+                            description: String(row.getCell(headers.indexOf("ap_desc")).value || ""),
+                            target_date: String(row.getCell(headers.indexOf("ap_date")).value || ""),
+                            owner: String(row.getCell(headers.indexOf("ap_owner")).value || ""),
+                            status: "proposed"
+                        });
+                    }
+                }
+                // Apply to existing assessment if provided, otherwise create new
+                var a;
+                if (existingAssessId) a = _findAssessment(existingAssessId);
+                if (!a) {
+                    // Try to create a fresh one — we don't have template_snapshot from the Excel,
+                    // so we can only hydrate an existing assessment with the same IDs.
+                    alert(t("assessment.excel_need_existing"));
+                    return;
+                }
+                (a.responses || []).forEach(function(resp) {
+                    var imported = respByQ[resp.question_id];
+                    if (!imported) return;
+                    resp.coverage = imported.coverage || resp.coverage;
+                    if (imported.answer != null && imported.answer !== "") resp.answer = imported.answer;
+                    if (imported.comment) resp.comment = imported.comment;
+                    if (imported.justification) resp.justification = imported.justification;
+                    if (imported.action_plans && imported.action_plans.length) resp.action_plans = imported.action_plans;
+                });
+                a.status = "pending_approval";
+                a.self_validation = true;
+                a.self_validated_at = new Date().toISOString();
+                _touchAssessment(a);
+                showStatus(t("assessment.imported"));
+                openAssessmentV2(a.id);
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function _normalizeCoverage(raw) {
+    if (!raw) return null;
+    var s = String(raw).toLowerCase().trim();
+    if (["covered", "couverte", "c"].indexOf(s) >= 0) return "covered";
+    if (["partial", "partielle", "partiellement", "p"].indexOf(s) >= 0) return "partial";
+    if (["not_covered", "non couverte", "non-couverte", "nc"].indexOf(s) >= 0) return "not_covered";
+    if (["not_applicable", "non applicable", "na", "n/a"].indexOf(s) >= 0) return "not_applicable";
+    return null;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL MEASURES REGISTRY

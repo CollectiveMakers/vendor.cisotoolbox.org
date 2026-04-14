@@ -180,6 +180,16 @@
 .crit-info { background: #dbeafe; color: #1e3a8a; }
 .crit-major { background: #ffedd5; color: #7c2d12; }
 .crit-blocker { background: #fee2e2; color: #7f1d1d; }
+/* Badge variant used inside the assessment question headers */
+.crit-badge { padding: 3px 8px; border-radius: 4px; font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+
+/* Assessment V2 status badges */
+.evalv2-status { padding: 2px 8px; border-radius: 10px; font-size: 0.78em; font-weight: 700; }
+.evalv2-status-draft { background: #e2e8f0; color: #334155; }
+.evalv2-status-in_progress { background: #dbeafe; color: #1e3a8a; }
+.evalv2-status-pending_approval { background: #ffedd5; color: #7c2d12; }
+.evalv2-status-validated { background: #dcfce7; color: #166534; }
+.evalv2-status-rejected { background: #fee2e2; color: #7f1d1d; }
 select.tpl-criticality { font-weight: 700; border-width: 1px; }
 select.tpl-criticality.crit-info, select.tpl-criticality.crit-major, select.tpl-criticality.crit-blocker { border-color: currentColor; }
 
