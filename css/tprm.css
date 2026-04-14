@@ -72,6 +72,159 @@
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 
+/* Table inline editors and .ct-icon are defined in shared/css/cisotoolbox.css */
+
+/* ── Questionnaire templates ──────────────────────────── */
+/* Accessibility: all text colors target WCAG AA (4.5:1) or AAA (7:1).
+   --gray-dark (#475569) provides 7:1 on white and ~6.8:1 on --bg.
+   --text-muted (#64748b) is only used for purely decorative context. */
+.tpl-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.tpl-header h2 { margin: 0; flex: 1; }
+.tpl-meta { font-size: 0.78em; color: var(--gray-dark); font-weight: 600; }
+
+/* .ct-icon is defined in shared/css/cisotoolbox.css (1em square, inherits currentColor) */
+
+/* Harmonized template-list header action buttons: identical size and
+   height, SVG icon + label. Only the background color varies per action. */
+.tpl-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.tpl-header-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-width: 180px; height: 36px; padding: 0 14px; margin: 0;
+    border: 1px solid transparent; border-radius: 6px;
+    font-size: 0.85em; font-weight: 600; line-height: 1;
+    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    background: var(--card-bg); color: var(--text);
+}
+.tpl-header-btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.tpl-header-btn:active { transform: translateY(0); }
+.tpl-header-btn .ct-icon { width: 16px; height: 16px; }
+.tpl-header-btn--primary { background: var(--green); color: #fff; border-color: var(--green); }
+.tpl-header-btn--violet  { background: var(--violet); color: #fff; border-color: var(--violet); }
+.tpl-header-btn--ghost   { background: var(--card-bg); color: var(--gray-dark); border-color: var(--gray-light); }
+.tpl-header-btn--ghost:hover { background: var(--bg-highlight); color: #1d4ed8; border-color: var(--light-blue); }
+
+.tpl-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 14px; transition: all 0.15s; }
+.tpl-card:hover { border-color: var(--light-blue); box-shadow: 0 0 0 1px var(--light-blue); }
+.tpl-card-icon { width: 40px; height: 40px; border-radius: 8px; background: var(--bg-highlight); color: #1d4ed8; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tpl-card-icon .ct-icon { width: 22px; height: 22px; }
+.tpl-card-body { flex: 1; min-width: 0; }
+.tpl-card-name { font-weight: 700; font-size: 0.95em; color: var(--text); }
+.tpl-card-desc { font-size: 0.82em; color: var(--gray-dark); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-card-stats { display: flex; gap: 14px; font-size: 0.78em; color: var(--gray-dark); flex-shrink: 0; }
+.tpl-card-stats strong { color: var(--text); font-weight: 700; }
+.tpl-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* Template kind badges */
+.tpl-kind-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.65em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle; margin-left: 4px; }
+.tpl-kind-badge.tpl-kind-questionnaire { background: #dbeafe; color: #1e3a8a; }
+.tpl-kind-badge.tpl-kind-audit { background: #ede9fe; color: #5b21b6; }
+.tpl-card-icon.tpl-icon-questionnaire { background: #dbeafe; color: #1e3a8a; }
+.tpl-card-icon.tpl-icon-audit { background: #ede9fe; color: #5b21b6; }
+
+/* Equalized square action buttons in the template list cards */
+.tpl-card-actions .tpl-icon-btn { width: 36px; height: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.tpl-card-actions .tpl-icon-btn .ct-icon { width: 18px; height: 18px; }
+
+/* Accessible CSS tooltip — uses data-tooltip="…" on any element.
+   Shows on :hover and :focus-visible. Respects prefers-reduced-motion.
+   Works alongside native title="" for screen readers. */
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--blue);
+    color: white;
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease-in 0.25s;
+    z-index: 200;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+[data-tooltip]::before {
+    content: "";
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: 50%;
+    transform: translateX(-50%);
+    border: 4px solid transparent;
+    border-top-color: var(--blue);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease-in 0.25s;
+    z-index: 200;
+}
+[data-tooltip]:hover::after,
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::after,
+[data-tooltip]:focus-visible::before {
+    opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+    [data-tooltip]::after, [data-tooltip]::before { transition: none; }
+}
+
+.tpl-editor-meta { margin-bottom: 14px; }
+.tpl-section-count { font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-dark); }
+
+.tpl-section { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+.tpl-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tpl-section-id { font-size: 0.72em; font-weight: 700; color: var(--gray-dark); background: var(--bg-subtle); padding: 3px 8px; border-radius: 4px; letter-spacing: 0.5px; }
+.tpl-section-title { flex: 1; font-size: 1em; font-weight: 700; border: none; background: transparent; padding: 4px 0; color: var(--text); border-bottom: 1px dashed transparent; }
+.tpl-section-title:focus { border-bottom-color: var(--light-blue); outline: none; }
+.tpl-section-desc { width: 100%; font-size: 0.85em; color: var(--text); border: 1px solid var(--border); background: white; padding: 6px 10px; border-radius: 4px; margin-bottom: 12px; resize: vertical; min-height: 32px; font-family: inherit; box-sizing: border-box; }
+.tpl-section-desc::placeholder { color: var(--gray-dark); }
+.tpl-section-desc:focus { outline: none; border-color: var(--light-blue); box-shadow: 0 0 0 2px var(--bg-highlight); }
+.tpl-section-questions-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.tpl-section-questions-label { font-size: 0.74em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-dark); }
+
+.tpl-question { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 6px; }
+.tpl-question-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.tpl-question-id { font-size: 0.72em; font-weight: 700; color: var(--gray-dark); background: white; padding: 3px 8px; border-radius: 3px; min-width: 42px; text-align: center; border: 1px solid var(--border); }
+.tpl-question-header select { font-size: 0.78em; padding: 4px 8px; border: 1px solid var(--gray-light); border-radius: 4px; background: white; font-family: inherit; color: var(--text); }
+.tpl-question-weight { display: inline-flex; align-items: center; gap: 4px; font-size: 0.76em; font-weight: 600; color: var(--gray-dark); }
+.tpl-question-weight input { width: 54px; font-size: 0.82em; padding: 4px 6px; border: 1px solid var(--gray-light); border-radius: 4px; background: white; color: var(--text); }
+.tpl-question-text { width: 100%; border: 1px solid var(--gray-light); border-radius: 4px; padding: 8px 10px; font-size: 0.9em; font-family: inherit; background: white; box-sizing: border-box; margin-bottom: 6px; resize: vertical; min-height: 40px; color: var(--text); }
+.tpl-question-text:focus { outline: none; border-color: var(--light-blue); box-shadow: 0 0 0 2px var(--bg-highlight); }
+.tpl-question-expected { width: 100%; border: 1px solid var(--gray-light); border-radius: 4px; padding: 6px 10px; font-size: 0.82em; font-family: inherit; background: white; box-sizing: border-box; color: var(--gray-dark); resize: vertical; min-height: 30px; }
+.tpl-question-expected::placeholder { color: var(--gray-dark); }
+.tpl-question-expected:focus { outline: none; border-color: var(--light-blue); color: var(--text); box-shadow: 0 0 0 2px var(--bg-highlight); }
+
+.tpl-question-options { margin-top: 8px; padding: 10px 12px; background: white; border-radius: 4px; border: 1px solid var(--border); }
+.tpl-question-options-label { font-size: 0.74em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-dark); margin-bottom: 6px; }
+.tpl-question-option { display: flex; gap: 6px; margin-bottom: 4px; }
+.tpl-question-option input { flex: 1; font-size: 0.85em; padding: 5px 8px; border: 1px solid var(--gray-light); border-radius: 4px; font-family: inherit; color: var(--text); }
+.tpl-question-option input:focus { outline: none; border-color: var(--light-blue); box-shadow: 0 0 0 2px var(--bg-highlight); }
+
+.tpl-icon-btn { padding: 4px 9px; background: white; border: 1px solid var(--gray-light); border-radius: 4px; cursor: pointer; font-size: 0.9em; color: var(--gray-dark); transition: all 0.15s; line-height: 1; }
+.tpl-icon-btn:hover:not(:disabled) { background: var(--bg-highlight); color: #1d4ed8; border-color: var(--light-blue); }
+.tpl-icon-btn:focus-visible { outline: 2px solid var(--light-blue); outline-offset: 1px; }
+.tpl-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.tpl-icon-btn.danger:hover:not(:disabled) { background: #fef2f2; color: #991b1b; border-color: var(--red); }
+
+.crit-info { background: #dbeafe; color: #1e3a8a; }
+.crit-major { background: #ffedd5; color: #7c2d12; }
+.crit-blocker { background: #fee2e2; color: #7f1d1d; }
+/* Badge variant used inside the assessment question headers */
+.crit-badge { padding: 3px 8px; border-radius: 4px; font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+
+/* Assessment V2 status badges */
+.evalv2-status { padding: 2px 8px; border-radius: 10px; font-size: 0.78em; font-weight: 700; }
+.evalv2-status-draft { background: #e2e8f0; color: #334155; }
+.evalv2-status-in_progress { background: #dbeafe; color: #1e3a8a; }
+.evalv2-status-pending_approval { background: #ffedd5; color: #7c2d12; }
+.evalv2-status-validated { background: #dcfce7; color: #166534; }
+.evalv2-status-rejected { background: #fee2e2; color: #7f1d1d; }
+select.tpl-criticality { font-weight: 700; border-width: 1px; }
+select.tpl-criticality.crit-info, select.tpl-criticality.crit-major, select.tpl-criticality.crit-blocker { border-color: currentColor; }
+
 /* ── Risk score colors ────────────────────────────────── */
 .score-low { color: #166534; }
 .score-medium { color: #854d0e; }

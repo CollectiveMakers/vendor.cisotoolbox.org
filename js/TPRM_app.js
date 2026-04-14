@@ -9,7 +9,20 @@
  */
 
 // CT_CONFIG — cisotoolbox framework integration
-var TPRM_INIT_DATA = { vendors: [], risks: [], assessments: [], documents: [], metadata: { organization: "", created: "" } };
+var TPRM_INIT_DATA = {
+    vendors: [],
+    risks: [],
+    assessments: [],
+    documents: [],
+    questionnaire_templates: [],
+    maturity_config: {
+        weight_by_kind: { questionnaire: 1.0, audit: 1.5 },
+        weight_by_template: {},
+        decay_per_quarter: 0.0,
+        min_effective_weight: 0.1
+    },
+    metadata: { organization: "", created: "" }
+};
 window.CT_CONFIG = {
     autosaveKey: "tprm_autosave",
     initDataVar: "TPRM_INIT_DATA",
@@ -36,6 +49,8 @@ function selectPanel(id) {
     renderPanel();
 }
 
+// SVG icons: _icon(name) is provided by shared/js/cisotoolbox.js
+
 function renderPanel() {
     var c = document.getElementById("content");
     _docsTableCounter = 0;
@@ -60,6 +75,14 @@ function renderPanel() {
         case "measures": c.innerHTML = renderGlobalMeasures(); break;
         case "assessments": c.innerHTML = _selectedVendor !== null ? renderVendorDetail() : renderVendorList(); _vendorTab = "assessments"; break;
         case "documents": c.innerHTML = renderDocList(); break;
+        case "templates":
+            if (_editingTemplateId) { c.innerHTML = renderTemplateEditor(_editingTemplateId); }
+            else { c.innerHTML = renderTemplateList(); }
+            break;
+        case "history":
+            c.innerHTML = '<h2>' + t("tprm.history.title") + '</h2><p class="panel-desc">' + t("tprm.history.intro") + '</p><div id="history-content"></div>';
+            renderHistory();
+            break;
         default: c.innerHTML = renderDashboard();
     }
     _initSliders();
@@ -503,7 +526,6 @@ function renderVendorList() {
     h += '<h2>' + t("vendor.title") + '</h2>';
     h += '<div style="display:flex;gap:8px">';
     h += '<button class="btn-add" data-click="addVendor">' + t("vendor.add") + '</button>';
-    h += '<button class="btn-add" style="background:var(--light-blue)" data-click="triggerImportRisk">' + t("vendor.import_risk") + '</button>';
     h += '</div></div>';
 
     // Search + filter bar
@@ -899,16 +921,19 @@ var _vrefCounter = 1000;
 function _renderVendorRisks(v) {
     if (!v.measures) v.measures = [];
     var risks = D.risks.filter(function(r) { return r.vendor_id === v.id; });
-    var h = '<div class="panel-desc" style="margin-bottom:10px;font-size:0.82em">' + t("risk.vendor_help") + '</div>';
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+    // Align header styling with the Assessments and Documents tabs:
+    // single flex row with the title count on the left and the action
+    // buttons on the right. The contextual help previously shown as a
+    // <p class="panel-desc"> is reachable from the sidebar Help item.
+    var h = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
     h += '<strong>' + t("risk.title") + ' (' + risks.length + ')</strong>';
-    h += '<div style="display:flex;gap:6px">';
+    h += '<span style="flex:1"></span>';
     if (typeof _aiIsEnabled === "function" && _aiIsEnabled()) {
-        h += '<button class="btn-add" style="background:var(--light-blue)" data-click="openAiRiskAssistant" data-args=\'' + _da(_selectedVendor) + '\'>&#129302; IA</button>';
+        h += '<button class="btn-add" style="font-size:0.78em;padding:3px 10px;background:var(--light-blue)" data-click="openAiRiskAssistant" data-args=\'' + _da(_selectedVendor) + '\'>&#129302; ' + t("ai.generate_risks") + '</button>';
     }
-    h += '<button class="btn-add" data-click="addRiskForVendor" data-args=\'' + _da(v.id) + '\'>' + t("risk.add") + '</button>';
-    h += '</div></div>';
-    if (!risks.length) return h + '<div style="color:var(--text-muted);font-size:0.85em">' + t("risk.empty") + '</div>';
+    h += '<button class="btn-add" style="font-size:0.78em;padding:3px 10px" data-click="addRiskForVendor" data-args=\'' + _da(v.id) + '\'>' + t("risk.add") + '</button>';
+    h += '</div>';
+    if (!risks.length) return h + '<div style="color:var(--text-muted);font-size:0.85em;margin-top:8px">' + t("risk.empty") + '</div>';
 
     // Split measures into "en place" (terminé) and "prévues" (planifié/en_cours)
     var measEnPlace = v.measures.filter(function(m) { return m.statut === "termine"; });
@@ -1049,10 +1074,14 @@ function _renderVendorRisks(v) {
     });
     h += '</tbody></table>';
 
-    // Measures registry below the risk table
+    // Measures registry below the risk table — use the same header style
+    // as the other vendor tabs (flex row, count next to title).
     if (v.measures.length > 0) {
         h += '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
-        h += '<strong style="font-size:0.85em">' + t("measure.registry") + ' (' + v.measures.length + ')</strong>';
+        h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
+        h += '<strong>' + t("measure.registry") + ' (' + v.measures.length + ')</strong>';
+        h += '<span style="flex:1"></span>';
+        h += '</div>';
         h += colsButton("vendor-measures-table");
         h += '<table id="vendor-measures-table" style="font-size:0.82em;margin-top:6px"><thead><tr>';
         h += '<th' + hd("id") + ' style="width:70px">ID</th><th' + hd("mesure") + '>' + t("measure.col_mesure") + '</th><th' + hd("type") + '>' + t("measure.col_type") + '</th>';
@@ -1588,16 +1617,28 @@ function _renderVendorAssessments(v) {
     h += '<strong>' + t("assessment.title") + ' (' + assessments.length + ')</strong>';
     h += '<button class="btn-add" data-click="newAssessment" data-args=\'' + _da(v.id) + '\'>' + t("assessment.new") + '</button>';
     h += '</div>';
+
+    // Weighted maturity detail (only when at least one validated assessment exists)
+    h += _renderVendorMaturityDetail(v);
+
     if (!assessments.length) return h + '<div style="color:var(--text-muted);font-size:0.85em">' + t("assessment.empty") + '</div>';
     assessments.forEach(function(a) {
         var comp = a.completion_rate != null ? a.completion_rate : 0;
         var compColor = comp === 100 ? "var(--green)" : comp > 50 ? "var(--orange)" : "var(--text-muted)";
         var scoreColor = a.score != null ? (a.score >= 80 ? "var(--green)" : a.score >= 50 ? "var(--orange)" : "var(--red)") : "var(--text-muted)";
+        var statusKey = a.status || "draft";
+        var label = _assessmentStatusLabel(statusKey);
+        // Template-driven assessments display the template name; legacy ones keep the type.
+        var title = a.template_snapshot ? (a.template_snapshot.name || a.id) : t("assessment.type_" + (a.type || "periodic"));
 
         h += '<div class="question-card" style="cursor:pointer" data-click="openAssessmentFromVendor" data-args=\'' + _da(a.id, _selectedVendor) + '\'>';
-        h += '<div style="display:flex;justify-content:space-between;align-items:center">';
-        h += '<span style="font-weight:600">' + esc(a.id) + ' — ' + t("assessment.type_" + a.type) + '</span>';
-        h += '<span style="font-size:0.82em;color:var(--text-muted)">' + esc(a.date || "") + '</span>';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">';
+        h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+        h += '<span style="font-weight:600">' + esc(a.id) + '</span>';
+        h += '<span style="font-size:0.82em;color:var(--gray-dark)">' + esc(title) + '</span>';
+        h += '<span class="evalv2-status evalv2-status-' + esc(statusKey) + '">' + esc(label) + '</span>';
+        h += '</div>';
+        h += '<span style="font-size:0.78em;color:var(--gray-dark)">' + esc(a.date || "") + '</span>';
         h += '</div>';
         // Progress bar + score
         h += '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">';
@@ -1612,6 +1653,16 @@ function _renderVendorAssessments(v) {
         h += '</div>';
     });
     return h;
+}
+
+// Safe lookup for the localized label of any assessment status (legacy and V2).
+function _assessmentStatusLabel(statusKey) {
+    var key = "assessment.status_" + statusKey;
+    var label = t(key);
+    // If the translation key is missing, t() returns the key itself — fall back
+    // to a title-cased version of the status so the UI stays readable.
+    if (label === key) return statusKey.replace(/_/g, " ");
+    return label;
 }
 
 function _renderVendorDocs(v) {
@@ -1853,7 +1904,7 @@ function renderAssessmentList() {
         h += '<td' + hd("completion") + ' style="color:' + compColor + ';font-weight:600">' + comp + '%</td>';
         h += '<td' + hd("score") + '>' + (a.score != null ? a.score + '%' : '-') + '</td>';
         h += '<td' + hd("status") + '>' + t("assessment.status_" + a.status) + '</td>';
-        h += '<td><button class="btn-add" data-click="openAssessment" data-args=\'' + _da(a.id) + '\'>' + t("vendor.edit") + '</button>';
+        h += '<td><button class="btn-add" data-click="openAssessmentDispatch" data-args=\'' + _da(a.id) + '\'>' + t("vendor.edit") + '</button>';
         h += ' <button class="btn-add" data-click="exportAssessmentExcel" data-args=\'' + _da(a.id) + '\'>' + t("assessment.export_excel") + '</button>';
         h += ' <button class="btn-del" data-click="deleteAssessment" data-args=\'' + _da(a.id) + '\'>' + t("vendor.delete") + '</button></td>';
         h += '</tr>';
@@ -1883,9 +1934,22 @@ function renderDocList() {
 // ASSESSMENT DETAIL (Questionnaire)
 // ═══════════════════════════════════════════════════════════════
 
+function openAssessmentDispatch(assessId) {
+    var a = D.assessments.find(function(x) { return x.id === assessId; });
+    if (a && a.template_snapshot) openAssessmentV2(assessId);
+    else openAssessment(assessId);
+}
+window.openAssessmentDispatch = openAssessmentDispatch;
+
 function openAssessmentFromVendor(assessId, vendorIdx) {
     _assessReturnToVendor = vendorIdx;
-    openAssessment(assessId);
+    var a = D.assessments.find(function(x) { return x.id === assessId; });
+    if (a && a.template_snapshot) {
+        _assessmentV2Returning = vendorIdx;
+        openAssessmentV2(assessId);
+    } else {
+        openAssessment(assessId);
+    }
 }
 window.openAssessmentFromVendor = openAssessmentFromVendor;
 
@@ -1981,7 +2045,11 @@ function setAnswer(assessId, questionId, answer) {
     // Update vendor's cyber maturity from score
     if (v && a.score != null) {
         if (!v.exposure) v.exposure = {};
-        v.exposure.maturite = _scoreToMaturite(a.score);
+        // Only apply the single-assessment maturity if no validated V2
+        // assessment is available (which would otherwise take priority).
+        var hasValidated = (D.assessments || []).some(function(x) { return x.vendor_id === v.id && x.status === "validated"; });
+        if (!hasValidated) v.exposure.maturite = _scoreToMaturite(a.score);
+        else _refreshVendorMaturity(v.id);
     }
     _autoSave();
     _refreshThreatDisplay();
@@ -2005,8 +2073,9 @@ function saveAssessment(assessId) {
     // Update vendor's cyber maturity from latest assessment score
     if (v && a.score != null) {
         if (!v.exposure) v.exposure = {};
-        // Convert score (0-100%) to maturity (0-4): 0-20%=0, 21-40%=1, 41-60%=2, 61-80%=3, 81-100%=4
-        v.exposure.maturite = _scoreToMaturite(a.score);
+        var hasValidated = (D.assessments || []).some(function(x) { return x.vendor_id === v.id && x.status === "validated"; });
+        if (!hasValidated) v.exposure.maturite = _scoreToMaturite(a.score);
+        else _refreshVendorMaturity(v.id);
     }
 
     _autoSave();
@@ -2048,11 +2117,10 @@ function _computeAssessmentScore(a, questions) {
 
 function deleteAssessment(assessId) {
     if (!confirm(t("assessment.confirm_delete"))) return;
-    _saveState();
     var idx = D.assessments.findIndex(function(a) { return a.id === assessId; });
     if (idx < 0) return;
     D.assessments.splice(idx, 1);
-    _autoSave();
+    _autoSave(); // _autoSave hook handles the undo-stack push
     renderPanel();
     showStatus(t("assessment.deleted"));
 }
@@ -2304,15 +2372,59 @@ function deleteRisk(riskIdx) {
 window.deleteRisk = deleteRisk;
 
 function newAssessment(vendorId) {
-    // Propose choice: manual or import
+    _ensureDefaultTemplate();
+    var templates = D.questionnaire_templates || [];
+    // Group templates by kind with an <optgroup> each.
+    var questionnaires = templates.filter(function(tp) { return (tp.kind || "questionnaire") === "questionnaire"; });
+    var audits = templates.filter(function(tp) { return tp.kind === "audit"; });
+    var tplOptions = "";
+    function _opt(tp) {
+        var sCount = (tp.sections || []).length;
+        var qCount = (tp.sections || []).reduce(function(n, s) { return n + (s.questions || []).length; }, 0);
+        return '<option value="' + esc(tp.id) + '">' + esc(tp.name) + '  —  ' + sCount + ' ' + esc(t("template.col_sections").toLowerCase()) + ', ' + qCount + ' ' + esc(t("template.col_questions").toLowerCase()) + '</option>';
+    }
+    if (questionnaires.length) {
+        tplOptions += '<optgroup label="' + esc(t("template.kind_questionnaire")) + '">' + questionnaires.map(_opt).join("") + '</optgroup>';
+    }
+    if (audits.length) {
+        tplOptions += '<optgroup label="' + esc(t("template.kind_audit")) + '">' + audits.map(_opt).join("") + '</optgroup>';
+    }
+
     _showModal(
         '<h3>' + t("assessment.new") + '</h3>' +
-        '<p style="font-size:0.85em;color:var(--text-muted);margin-bottom:12px">' + esc(_vendorName(vendorId)) + '</p>' +
-        '<div style="display:flex;gap:8px">' +
-        '<button class="btn-add" data-click="_newAssessmentManual" data-args=\'' + _da(vendorId) + '\'>' + t("assessment.manual") + '</button>' +
-        '<button class="btn-add" style="background:var(--light-blue)" data-click="_newAssessmentImport" data-args=\'' + _da(vendorId) + '\'>' + t("assessment.import_excel") + '</button>' +
-        '</div>'
+        '<p style="font-size:0.85em;color:var(--gray-dark);margin-bottom:14px">' + esc(_vendorName(vendorId)) + '</p>' +
+        // Option 1: from template
+        '<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px">' +
+            '<div style="font-size:0.78em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:8px">' + esc(t("assessment.from_template")) + '</div>' +
+            '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.choose_template")) + '</label>' +
+            '<select id="na-template" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:8px">' + tplOptions + '</select>' +
+            '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.due_date")) + '</label>' +
+            '<input type="date" id="na-due-date" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:10px">' +
+            '<button class="btn-add" style="width:100%" data-click="_newAssessmentFromTemplate" data-args=\'' + _da(vendorId) + '\'>' + esc(t("assessment.start_assessment")) + '</button>' +
+        '</div>' +
+        // Option 2: import response
+        '<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px">' +
+            '<div style="font-size:0.78em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:8px">' + esc(t("assessment.import_vendor_response")) + '</div>' +
+            '<p style="font-size:0.78em;color:var(--gray-dark);margin-bottom:8px">' + esc(t("assessment.import_hint")) + '</p>' +
+            '<button class="btn-add" style="width:100%;background:var(--light-blue)" data-click="_importAssessmentResponse" data-args=\'' + _da(vendorId) + '\'>' + esc(t("assessment.import_file")) + '</button>' +
+        '</div>' +
+        // Option 3 (legacy): manual creation with built-in questions
+        '<details style="margin-top:10px"><summary style="font-size:0.78em;color:var(--gray-dark);cursor:pointer">' + esc(t("assessment.legacy_options")) + '</summary>' +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+            '<button class="tpl-icon-btn" style="flex:1" data-click="_newAssessmentManual" data-args=\'' + _da(vendorId) + '\'>' + esc(t("assessment.manual")) + '</button>' +
+            '<button class="tpl-icon-btn" style="flex:1" data-click="_newAssessmentImport" data-args=\'' + _da(vendorId) + '\'>' + esc(t("assessment.import_excel_legacy")) + '</button>' +
+        '</div>' +
+        '</details>'
     );
+
+    // Default due date = today + 30 days
+    setTimeout(function() {
+        var el = document.getElementById("na-due-date");
+        if (el) {
+            var d = new Date(); d.setDate(d.getDate() + 30);
+            el.value = d.toISOString().split("T")[0];
+        }
+    }, 0);
 }
 window.newAssessment = newAssessment;
 
@@ -2382,6 +2494,2758 @@ window._newAssessmentImport = _newAssessmentImport;
 
 function backToVendors() { _selectedVendor = null; renderPanel(); }
 window.backToVendors = backToVendors;
+
+// ═══════════════════════════════════════════════════════════════
+// QUESTIONNAIRE TEMPLATES
+// ═══════════════════════════════════════════════════════════════
+//
+// Data model (mono-language, stored in D.questionnaire_templates):
+//   {
+//     id, name, description, language, version,
+//     created_at, updated_at,
+//     sections: [
+//       {
+//         id, title, description,
+//         questions: [
+//           {
+//             id, type, text, description, expected,
+//             weight, criticality, options
+//           }
+//         ]
+//       }
+//     ]
+//   }
+//
+// Question types: yes_no, scale_1_5, single_choice, multi_choice,
+// free_text, file_upload
+// Criticality: info, major, blocker
+// ═══════════════════════════════════════════════════════════════
+
+var _editingTemplateId = null;
+
+// Templates only support free_text questions now. The constant is kept
+// for backwards compat and documentation; the editor no longer exposes
+// a dropdown and the legacy types are healed to free_text at load time.
+var QUESTION_TYPES = ["free_text"];
+var CRITICALITY_LEVELS = ["info", "major", "blocker"];
+var TEMPLATE_KINDS = ["questionnaire", "audit"];
+
+function _nextTemplateId() {
+    var n = (D.questionnaire_templates || []).length + 1;
+    var id;
+    do {
+        id = "TPL-" + String(n).padStart(3, "0");
+        n++;
+    } while ((D.questionnaire_templates || []).some(function(t0) { return t0.id === id; }));
+    return id;
+}
+
+function _nextSectionId(tpl) {
+    var n = (tpl.sections || []).length + 1;
+    var id;
+    do {
+        id = "SEC-" + String(n).padStart(3, "0");
+        n++;
+    } while ((tpl.sections || []).some(function(s) { return s.id === id; }));
+    return id;
+}
+
+// Question IDs are unique at the TEMPLATE level (not the section level)
+// so response lookups never collide between sections.
+function _nextQuestionId(tpl) {
+    var existing = {};
+    (tpl.sections || []).forEach(function(s) {
+        (s.questions || []).forEach(function(q) { if (q.id) existing[q.id] = true; });
+    });
+    var n = Object.keys(existing).length + 1;
+    var id;
+    do {
+        id = "Q-" + String(n).padStart(3, "0");
+        n++;
+    } while (existing[id]);
+    return id;
+}
+
+// Ensure a template has globally unique question IDs. Called on load
+// to heal templates that were created before the fix.
+function _normalizeTemplateQuestionIds(tpl) {
+    if (!tpl || !tpl.sections) return false;
+    var seen = {}, changed = false, mapping = {};
+    var n = 1;
+    tpl.sections.forEach(function(s) {
+        (s.questions || []).forEach(function(q) {
+            if (!q.id || seen[q.id]) {
+                var oldId = q.id;
+                var id;
+                do {
+                    id = "Q-" + String(n).padStart(3, "0");
+                    n++;
+                } while (seen[id]);
+                if (oldId) mapping[oldId] = id;
+                q.id = id;
+                changed = true;
+            }
+            seen[q.id] = true;
+            // Increment n beyond existing numeric suffix to keep things monotonic
+            var m = /^Q-(\d+)$/.exec(q.id);
+            if (m) { var num = parseInt(m[1], 10); if (num >= n) n = num + 1; }
+        });
+    });
+    return changed;
+}
+
+function _today() { return new Date().toISOString().split("T")[0]; }
+
+// Migrate legacy TPRM_QUESTIONS into a default template on first load.
+// Called from renderPanel before rendering templates (or any assessments).
+function _ensureDefaultTemplate() {
+    if (!D.questionnaire_templates) D.questionnaire_templates = [];
+    // Heal any existing templates:
+    // - section-scoped IDs (pre-fix) may cause duplicate question ids
+    // - missing `kind` field → default to "questionnaire"
+    // - legacy question types → free_text (only supported type now)
+    var healed = false;
+    D.questionnaire_templates.forEach(function(tpl) {
+        if (_normalizeTemplateQuestionIds(tpl)) healed = true;
+        if (!tpl.kind) { tpl.kind = "questionnaire"; healed = true; }
+        (tpl.sections || []).forEach(function(s) {
+            (s.questions || []).forEach(function(q) {
+                if (q.type !== "free_text") { q.type = "free_text"; healed = true; }
+                if (q.options && q.options.length) { q.options = []; healed = true; }
+            });
+        });
+    });
+    // Heal maturity_config on projects created before phase 0 / step 4
+    if (!D.maturity_config) {
+        D.maturity_config = {
+            weight_by_kind: { questionnaire: 1.0, audit: 1.5 },
+            weight_by_template: {},
+            decay_per_quarter: 0.0,
+            min_effective_weight: 0.1
+        };
+        healed = true;
+    }
+    if (healed) _autoSave();
+
+    var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
+    var added = false;
+
+    // Seed the default vendor questionnaire if absent
+    if (!D.questionnaire_templates.some(function(tp) { return tp.id === "TPL-001"; })) {
+        if (typeof TPRM_QUESTIONS !== "undefined" && TPRM_QUESTIONS.length) {
+            D.questionnaire_templates.push(_buildDefaultQuestionnaireTemplate(lang));
+            added = true;
+        }
+    }
+    // Seed the default audit template (ANSSI — 42 hygiene rules)
+    if (!D.questionnaire_templates.some(function(tp) { return tp.id === "TPL-002"; })) {
+        D.questionnaire_templates.push(_buildAnssi42AuditTemplate(lang));
+        added = true;
+    }
+    if (added) _autoSave();
+}
+
+function _buildDefaultQuestionnaireTemplate(lang) {
+    var tpl = {
+        id: "TPL-001",
+        name: lang === "en" ? "Standard vendor questionnaire" : "Questionnaire fournisseur standard",
+        description: lang === "en"
+            ? "Default security questionnaire (30 essential questions covering governance, access, cloud, DORA, etc.)."
+            : "Questionnaire de securite par defaut (30 questions essentielles couvrant gouvernance, acces, cloud, DORA, etc.).",
+        kind: "questionnaire",
+        language: lang,
+        version: 1,
+        created_at: _today(),
+        updated_at: _today(),
+        sections: []
+    };
+
+    var domainTitles = {
+        governance:     { fr: "Gouvernance et organisation",      en: "Governance and organization" },
+        access:         { fr: "Controle d'acces",                 en: "Access control" },
+        network:        { fr: "Securite reseau",                  en: "Network security" },
+        dev:            { fr: "Developpement securise",           en: "Secure development" },
+        data:           { fr: "Protection des donnees",           en: "Data protection" },
+        endpoint:       { fr: "Securite des postes",              en: "Endpoint security" },
+        detection:      { fr: "Detection et supervision",         en: "Detection and monitoring" },
+        continuity:     { fr: "Continuite d'activite",            en: "Business continuity" },
+        supply_chain:   { fr: "Chaine d'approvisionnement",       en: "Supply chain" },
+        audit:          { fr: "Audit et conformite",              en: "Audit and compliance" },
+        hr:             { fr: "Ressources humaines",              en: "Human resources" },
+        physical:       { fr: "Securite physique",                en: "Physical security" },
+        cloud:          { fr: "Securite cloud",                   en: "Cloud security" },
+        incidents:      { fr: "Gestion des incidents",            en: "Incident management" },
+        compliance:     { fr: "Conformite reglementaire",         en: "Regulatory compliance" },
+        dora:           { fr: "DORA - Prestataire TIC critique",  en: "DORA - Critical ICT provider" }
+    };
+
+    var sectionMap = {};
+    var globalQIdx = 0;
+    TPRM_QUESTIONS.forEach(function(q) {
+        var domain = q.domain || "other";
+        if (!sectionMap.hasOwnProperty(domain)) {
+            var title = (domainTitles[domain] && domainTitles[domain][lang]) || domain;
+            tpl.sections.push({
+                id: "SEC-" + String(tpl.sections.length + 1).padStart(3, "0"),
+                title: title,
+                description: "",
+                questions: []
+            });
+            sectionMap[domain] = tpl.sections.length - 1;
+        }
+        var section = tpl.sections[sectionMap[domain]];
+        globalQIdx++;
+        section.questions.push({
+            id: "Q-" + String(globalQIdx).padStart(3, "0"),
+            type: "free_text",
+            text: lang === "en" ? (q.text_en || q.text_fr || "") : (q.text_fr || q.text_en || ""),
+            description: "",
+            expected: lang === "en" ? (q.expected_en || "") : (q.expected_fr || ""),
+            weight: q.weight || 5,
+            criticality: "major",
+            options: []
+        });
+    });
+    return tpl;
+}
+
+// ANSSI — 42 règles d'hygiène informatique
+// Source: https://cyber.gouv.fr/publications/guide-dhygiene-informatique
+// Organized in 10 thematic groups.
+var ANSSI_42_RULES = [
+    // 1. Sensibiliser et former
+    { n: 1, group: "training", fr: "Former les equipes operationnelles a la securite des systemes d'information", en: "Train operational teams on information system security" },
+    { n: 2, group: "training", fr: "Sensibiliser les utilisateurs aux bonnes pratiques elementaires de securite informatique", en: "Raise user awareness of basic IT security practices" },
+    { n: 3, group: "training", fr: "Maitriser les risques de l'infogerance", en: "Control the risks of outsourcing" },
+    // 2. Connaitre le SI
+    { n: 4, group: "inventory", fr: "Identifier les informations et serveurs les plus sensibles et maintenir un schema du reseau", en: "Identify the most sensitive information and servers and maintain a network diagram" },
+    { n: 5, group: "inventory", fr: "Disposer d'un inventaire exhaustif des comptes privilegies et le maintenir a jour", en: "Maintain a complete and up-to-date inventory of privileged accounts" },
+    { n: 6, group: "inventory", fr: "Organiser les procedures d'arrivee, de depart et de changement de fonction des utilisateurs", en: "Organize onboarding, offboarding and role change procedures" },
+    { n: 7, group: "inventory", fr: "Autoriser la connexion au reseau de l'entite aux seuls equipements maitrises", en: "Only allow controlled devices to connect to the entity's network" },
+    // 3. Authentifier et controler les acces
+    { n: 8, group: "access", fr: "Identifier nommement chaque personne accedant au systeme et distinguer les roles utilisateur/administrateur", en: "Identify each user by name and separate user/administrator roles" },
+    { n: 9, group: "access", fr: "Attribuer les bons droits sur les ressources sensibles du systeme d'information", en: "Grant appropriate rights on sensitive information system resources" },
+    { n: 10, group: "access", fr: "Definir et verifier des regles de choix et de dimensionnement des mots de passe", en: "Define and enforce password selection and sizing rules" },
+    { n: 11, group: "access", fr: "Proteger les mots de passe stockes sur les systemes", en: "Protect passwords stored on systems" },
+    { n: 12, group: "access", fr: "Changer les elements d'authentification par defaut sur les equipements et services", en: "Change default authentication credentials on equipment and services" },
+    { n: 13, group: "access", fr: "Privilegier lorsque c'est possible une authentification forte", en: "Favor strong authentication whenever possible" },
+    // 4. Securiser les postes
+    { n: 14, group: "endpoint", fr: "Mettre en place un niveau de securite minimal sur l'ensemble du parc informatique", en: "Establish a minimum security baseline across the IT estate" },
+    { n: 15, group: "endpoint", fr: "Se proteger des menaces relatives a l'utilisation de supports amovibles", en: "Protect against threats from removable media" },
+    { n: 16, group: "endpoint", fr: "Utiliser un outil de gestion centralise afin d'homogeneiser les politiques de securite", en: "Use centralized management to homogenize security policies" },
+    { n: 17, group: "endpoint", fr: "Activer et configurer le pare-feu local des postes de travail", en: "Enable and configure local workstation firewalls" },
+    { n: 18, group: "endpoint", fr: "Chiffrer les donnees sensibles transmises par voie Internet", en: "Encrypt sensitive data transmitted over the Internet" },
+    // 5. Securiser le reseau
+    { n: 19, group: "network", fr: "Segmenter le reseau et mettre en place un cloisonnement entre ces zones", en: "Segment the network and partition between zones" },
+    { n: 20, group: "network", fr: "S'assurer de la securite des reseaux d'acces Wi-Fi et de la separation des usages", en: "Ensure Wi-Fi access network security and separation of uses" },
+    { n: 21, group: "network", fr: "Utiliser des protocoles reseaux securises des qu'ils existent", en: "Use secure network protocols whenever available" },
+    { n: 22, group: "network", fr: "Mettre en place une passerelle d'acces securise a Internet", en: "Implement a secure Internet access gateway" },
+    { n: 23, group: "network", fr: "Cloisonner les services visibles depuis Internet du reste du systeme d'information", en: "Isolate Internet-facing services from the rest of the IS" },
+    { n: 24, group: "network", fr: "Proteger sa messagerie professionnelle", en: "Protect the corporate email system" },
+    { n: 25, group: "network", fr: "Securiser les interconnexions reseau dediees avec les partenaires", en: "Secure dedicated network interconnections with partners" },
+    { n: 26, group: "network", fr: "Controler et proteger l'acces aux salles serveurs et aux locaux techniques", en: "Control and protect access to server rooms and technical premises" },
+    // 6. Securiser l'administration
+    { n: 27, group: "admin", fr: "Interdire l'acces a Internet depuis les comptes ou depuis les machines utilisees pour l'administration", en: "Forbid Internet access from admin accounts or admin machines" },
+    { n: 28, group: "admin", fr: "Utiliser un reseau dedie et cloisonne pour l'administration du systeme d'information", en: "Use a dedicated and partitioned network for IS administration" },
+    { n: 29, group: "admin", fr: "Limiter au strict besoin operationnel les droits d'administration sur les postes de travail", en: "Limit workstation admin rights to operational necessity" },
+    // 7. Gerer le nomadisme
+    { n: 30, group: "mobility", fr: "Prendre des mesures de securisation physique des terminaux nomades", en: "Take physical security measures for mobile devices" },
+    { n: 31, group: "mobility", fr: "Chiffrer les donnees sensibles, en particulier sur le materiel potentiellement perdable", en: "Encrypt sensitive data, especially on devices that could be lost" },
+    { n: 32, group: "mobility", fr: "Securiser la connexion reseau des postes utilises en situation de nomadisme", en: "Secure the network connection of mobile endpoints" },
+    { n: 33, group: "mobility", fr: "Adopter des politiques de securite dediees aux terminaux mobiles", en: "Adopt dedicated security policies for mobile devices" },
+    // 8. Maintenir le SI a jour
+    { n: 34, group: "update", fr: "Definir une politique de mise a jour des composants du systeme d'information", en: "Define an IS component update policy" },
+    { n: 35, group: "update", fr: "Anticiper la fin de la maintenance des logiciels et systemes et limiter les adherences logicielles", en: "Anticipate end-of-life of software and systems and limit dependencies" },
+    // 9. Superviser, auditer, reagir
+    { n: 36, group: "monitor", fr: "Activer et configurer les journaux des composants les plus importants", en: "Enable and configure logging for the most important components" },
+    { n: 37, group: "monitor", fr: "Definir et appliquer une politique de sauvegarde des composants critiques", en: "Define and apply a backup policy for critical components" },
+    { n: 38, group: "monitor", fr: "Proceder a des controles et audits de securite reguliers puis appliquer les actions correctives associees", en: "Carry out regular security checks and audits then apply corrective actions" },
+    { n: 39, group: "monitor", fr: "Designer un point de contact en securite des systemes d'information et s'assurer de sa formation", en: "Appoint a security contact and ensure they are trained" },
+    { n: 40, group: "monitor", fr: "Definir une procedure de gestion des incidents de securite", en: "Define a security incident management procedure" },
+    // 10. Pour aller plus loin
+    { n: 41, group: "advanced", fr: "Mener une analyse formelle des risques pesant sur le systeme d'information", en: "Conduct a formal risk analysis of the information system" },
+    { n: 42, group: "advanced", fr: "Privilegier l'usage de produits et de services qualifies par l'ANSSI", en: "Prefer products and services certified by ANSSI" }
+];
+
+function _buildAnssi42AuditTemplate(lang) {
+    var groupTitles = {
+        training:  { fr: "1. Sensibiliser et former",               en: "1. Raise awareness and train" },
+        inventory: { fr: "2. Connaitre le systeme d'information",   en: "2. Know the information system" },
+        access:    { fr: "3. Authentifier et controler les acces",  en: "3. Authenticate and control access" },
+        endpoint:  { fr: "4. Securiser les postes",                 en: "4. Secure workstations" },
+        network:   { fr: "5. Securiser le reseau",                  en: "5. Secure the network" },
+        admin:     { fr: "6. Securiser l'administration",           en: "6. Secure administration" },
+        mobility:  { fr: "7. Gerer le nomadisme",                   en: "7. Manage mobility" },
+        update:    { fr: "8. Maintenir le SI a jour",               en: "8. Keep the IS up to date" },
+        monitor:   { fr: "9. Superviser, auditer, reagir",          en: "9. Monitor, audit, respond" },
+        advanced:  { fr: "10. Pour aller plus loin",                en: "10. Going further" }
+    };
+
+    var tpl = {
+        id: "TPL-002",
+        name: lang === "en" ? "Audit - ANSSI 42 hygiene rules" : "Audit - 42 regles d'hygiene ANSSI",
+        description: lang === "en"
+            ? "Audit template based on the ANSSI 42 IT hygiene rules, organized into 10 thematic groups. Designed to be filled by an internal or external auditor against the vendor's environment."
+            : "Modele d'audit base sur les 42 regles d'hygiene informatique ANSSI, organisees en 10 groupes thematiques. Destine a etre rempli par un auditeur interne ou externe pour le perimetre du fournisseur.",
+        kind: "audit",
+        language: lang,
+        version: 1,
+        created_at: _today(),
+        updated_at: _today(),
+        sections: []
+    };
+
+    var sectionIdx = {};
+    ANSSI_42_RULES.forEach(function(rule, i) {
+        if (!sectionIdx.hasOwnProperty(rule.group)) {
+            tpl.sections.push({
+                id: "SEC-" + String(tpl.sections.length + 1).padStart(3, "0"),
+                title: groupTitles[rule.group][lang],
+                description: "",
+                questions: []
+            });
+            sectionIdx[rule.group] = tpl.sections.length - 1;
+        }
+        var section = tpl.sections[sectionIdx[rule.group]];
+        // Rule 1–42 directly as question IDs (stable across languages)
+        var label = "R" + String(rule.n).padStart(2, "0") + " — " + rule[lang];
+        section.questions.push({
+            id: "Q-" + String(rule.n).padStart(3, "0"),
+            type: "free_text",
+            text: label,
+            description: "",
+            expected: "",
+            weight: 5,
+            criticality: "major",
+            options: []
+        });
+    });
+    return tpl;
+}
+
+// ── List view ──────────────────────────────────────────────────
+function renderTemplateList() {
+    _ensureDefaultTemplate();
+    var templates = D.questionnaire_templates || [];
+    var h = '<div class="tpl-header">';
+    h += '<h2>' + t("template.title") + '</h2>';
+    h += '<span style="flex:1"></span>';
+    h += '<div class="tpl-header-actions">';
+    h += '<button class="tpl-header-btn tpl-header-btn--primary" data-click="createTemplate" data-args=\'["questionnaire"]\'>' + _icon("plus") + '<span>' + t("template.new_questionnaire_short") + '</span></button>';
+    h += '<button class="tpl-header-btn tpl-header-btn--violet" data-click="createTemplate" data-args=\'["audit"]\'>' + _icon("plus") + '<span>' + t("template.new_audit_short") + '</span></button>';
+    h += '<button class="tpl-header-btn tpl-header-btn--ghost" data-click="importTemplateFromExcel" title="' + esc(t("template.import_excel_hint")) + '">' + _icon("upload") + '<span>' + t("template.import_excel") + '</span></button>';
+    h += '<button class="tpl-header-btn tpl-header-btn--ghost" data-click="downloadTemplateExcelExample" title="' + esc(t("template.download_example_hint")) + '">' + _icon("download") + '<span>' + t("template.download_example") + '</span></button>';
+    h += '</div>';
+    h += '</div>';
+    h += '<p class="panel-desc">' + t("template.intro") + '</p>';
+
+    if (!templates.length) {
+        return h + '<div class="empty-state">' + t("template.empty") + '</div>';
+    }
+
+    templates.forEach(function(tpl) {
+        var kind = tpl.kind || "questionnaire";
+        var qCount = (tpl.sections || []).reduce(function(acc, s) { return acc + (s.questions || []).length; }, 0);
+        var sCount = (tpl.sections || []).length;
+        var kindIcon = kind === "audit" ? _icon("shield") : _icon("clipboard");
+        h += '<div class="tpl-card">';
+        h += '<div class="tpl-card-icon tpl-icon-' + kind + '">' + kindIcon + '</div>';
+        h += '<div class="tpl-card-body">';
+        h += '<div class="tpl-card-name">' + esc(tpl.name || "") + '  <span class="tpl-kind-badge tpl-kind-' + kind + '">' + esc(t("template.kind_" + kind)) + '</span></div>';
+        h += '<div class="tpl-card-desc">' + esc(tpl.description || tpl.id) + '</div>';
+        h += '</div>';
+        h += '<div class="tpl-card-stats">';
+        h += '<span><strong>' + sCount + '</strong> ' + t("template.col_sections").toLowerCase() + '</span>';
+        h += '<span><strong>' + qCount + '</strong> ' + t("template.col_questions").toLowerCase() + '</span>';
+        h += '<span>' + esc((tpl.language || "").toUpperCase()) + '</span>';
+        h += '<span>v' + (tpl.version || 1) + '</span>';
+        h += '</div>';
+        h += '<div class="tpl-card-actions">';
+        h += '<button class="tpl-icon-btn" data-click="editTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.edit")) + '" data-tooltip="' + esc(t("common.edit")) + '" aria-label="' + esc(t("common.edit")) + '">' + _icon("pencil") + '</button>';
+        h += '<button class="tpl-icon-btn" data-click="duplicateTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.duplicate")) + '" data-tooltip="' + esc(t("common.duplicate")) + '" aria-label="' + esc(t("common.duplicate")) + '">' + _icon("copy") + '</button>';
+        h += '<button class="tpl-icon-btn danger" data-click="deleteTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.delete")) + '" data-tooltip="' + esc(t("common.delete")) + '" aria-label="' + esc(t("common.delete")) + '">' + _icon("trash") + '</button>';
+        h += '</div>';
+        h += '</div>';
+    });
+    return h;
+}
+
+function createTemplate(kind) {
+    var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
+    var k = (kind === "audit" ? "audit" : "questionnaire");
+    var tpl = {
+        id: _nextTemplateId(),
+        name: lang === "en" ? (k === "audit" ? "New audit template" : "New template") : (k === "audit" ? "Nouveau modele d'audit" : "Nouveau template"),
+        description: "",
+        kind: k,
+        language: lang,
+        version: 1,
+        created_at: _today(),
+        updated_at: _today(),
+        sections: []
+    };
+    if (!D.questionnaire_templates) D.questionnaire_templates = [];
+    D.questionnaire_templates.push(tpl);
+    _autoSave();
+    _editingTemplateId = tpl.id;
+    renderPanel();
+}
+window.createTemplate = createTemplate;
+
+function editTemplate(tplId) {
+    _editingTemplateId = tplId;
+    renderPanel();
+}
+window.editTemplate = editTemplate;
+
+function duplicateTemplate(tplId) {
+    var src = (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
+    if (!src) return;
+    var copy = JSON.parse(JSON.stringify(src));
+    copy.id = _nextTemplateId();
+    copy.name = src.name + " (copy)";
+    copy.version = 1;
+    copy.created_at = _today();
+    copy.updated_at = _today();
+    D.questionnaire_templates.push(copy);
+    _autoSave();
+    renderPanel();
+}
+window.duplicateTemplate = duplicateTemplate;
+
+function deleteTemplate(tplId) {
+    if (!confirm(t("template.confirm_delete"))) return;
+    D.questionnaire_templates = (D.questionnaire_templates || []).filter(function(tp) { return tp.id !== tplId; });
+    _autoSave();
+    renderPanel();
+}
+window.deleteTemplate = deleteTemplate;
+
+// ── Editor view ────────────────────────────────────────────────
+function renderTemplateEditor(tplId) {
+    var tpl = (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
+    if (!tpl) { _editingTemplateId = null; return renderTemplateList(); }
+
+    var kind = tpl.kind || "questionnaire";
+    var h = '<div class="tpl-header">';
+    h += '<button class="btn-add" data-click="closeTemplateEditor">&laquo; ' + t("template.back") + '</button>';
+    h += '<h2>' + esc(tpl.name || "") + '</h2>';
+    h += '<span class="tpl-kind-badge tpl-kind-' + kind + '">' + esc(t("template.kind_" + kind)) + '</span>';
+    h += '<span class="tpl-meta">' + esc(tpl.id) + ' &middot; v' + (tpl.version || 1) + '</span>';
+    h += '</div>';
+
+    // Template metadata block — reuse .tprm-form design from vendor/measure forms
+    h += '<div class="tprm-form tpl-editor-meta">';
+    h += '<div class="form-grid">';
+    h += '<div class="form-row"><label>' + t("template.name") + '</label>';
+    h += '<input type="text" value="' + esc(tpl.name || "") + '" data-input="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "name") + '\' data-pass-value></div>';
+    h += '<div class="form-row"><label>' + t("template.kind") + '</label>';
+    h += '<select data-change="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "kind") + '\' data-pass-value>';
+    TEMPLATE_KINDS.forEach(function(k) {
+        h += '<option value="' + k + '"' + (kind === k ? " selected" : "") + '>' + esc(t("template.kind_" + k)) + '</option>';
+    });
+    h += '</select></div>';
+    h += '</div>';
+    h += '<div class="form-grid">';
+    h += '<div class="form-row"><label>' + t("template.language") + '</label>';
+    h += '<select data-change="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "language") + '\' data-pass-value>';
+    h += '<option value="fr"' + (tpl.language === "fr" ? " selected" : "") + '>Francais</option>';
+    h += '<option value="en"' + (tpl.language === "en" ? " selected" : "") + '>English</option>';
+    h += '</select></div>';
+    h += '<div class="form-row"></div>'; // spacer for grid
+    h += '</div>';
+    h += '<div class="form-row"><label>' + t("template.description") + '</label>';
+    h += '<textarea rows="3" data-input="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "description") + '\' data-pass-value>' + esc(tpl.description || "") + '</textarea></div>';
+    h += '</div>';
+
+    // Sections header + add button
+    var sections = tpl.sections || [];
+    h += '<div class="tpl-header" style="margin-top:18px;margin-bottom:10px">';
+    h += '<span class="tpl-section-count">' + t("template.sections") + ' &middot; ' + sections.length + '</span>';
+    h += '<span style="flex:1"></span>';
+    h += '<button class="btn-add" data-click="addSection" data-args=\'' + _da(tpl.id) + '\'>' + t("template.add_section") + '</button>';
+    h += '</div>';
+
+    if (!sections.length) {
+        h += '<div class="empty-state">' + t("template.no_sections") + '</div>';
+    } else {
+        sections.forEach(function(section, si) {
+            h += _renderTemplateSection(tpl, section, si, sections.length);
+        });
+    }
+
+    return h;
+}
+
+function _renderTemplateSection(tpl, section, si, total) {
+    var h = '<div class="tpl-section">';
+    // Section header
+    h += '<div class="tpl-section-header">';
+    h += '<span class="tpl-section-id">' + esc(section.id) + '</span>';
+    h += '<input type="text" class="tpl-section-title" value="' + esc(section.title || "") + '" placeholder="' + esc(t("template.section_title")) + '" data-input="_onSectionFieldChange" data-args=\'' + _da(tpl.id, section.id, "title") + '\' data-pass-value>';
+    h += '<button class="tpl-icon-btn"' + (si === 0 ? ' disabled' : '') + ' data-click="moveSection" data-args=\'' + _da(tpl.id, section.id, -1) + '\' title="' + esc(t("common.move_up")) + '">&uarr;</button>';
+    h += '<button class="tpl-icon-btn"' + (si === total - 1 ? ' disabled' : '') + ' data-click="moveSection" data-args=\'' + _da(tpl.id, section.id, 1) + '\' title="' + esc(t("common.move_down")) + '">&darr;</button>';
+    h += '<button class="tpl-icon-btn danger" data-click="deleteSection" data-args=\'' + _da(tpl.id, section.id) + '\' title="' + esc(t("common.delete")) + '">&#x1F5D1;</button>';
+    h += '</div>';
+    // Section description
+    h += '<textarea class="tpl-section-desc" rows="1" placeholder="' + esc(t("template.section_description")) + '" data-input="_onSectionFieldChange" data-args=\'' + _da(tpl.id, section.id, "description") + '\' data-pass-value>' + esc(section.description || "") + '</textarea>';
+
+    // Questions
+    var questions = section.questions || [];
+    h += '<div class="tpl-section-questions-header">';
+    h += '<span class="tpl-section-questions-label">' + t("template.questions") + ' &middot; ' + questions.length + '</span>';
+    h += '<button class="btn-add" style="font-size:0.75em;padding:4px 10px" data-click="addQuestion" data-args=\'' + _da(tpl.id, section.id) + '\'>' + t("template.add_question") + '</button>';
+    h += '</div>';
+
+    if (!questions.length) {
+        h += '<div style="color:var(--text-muted);font-size:0.8em;padding:12px;text-align:center;background:var(--bg);border-radius:4px">' + t("template.no_questions") + '</div>';
+    } else {
+        questions.forEach(function(q, qi) {
+            h += _renderTemplateQuestion(tpl, section, q, qi, questions.length);
+        });
+    }
+
+    h += '</div>';
+    return h;
+}
+
+function _renderTemplateQuestion(tpl, section, q, qi, total) {
+    var h = '<div class="tpl-question">';
+    // Header row: id + criticality + weight + controls
+    // Type dropdown removed — only free_text is supported now.
+    h += '<div class="tpl-question-header">';
+    h += '<span class="tpl-question-id">' + esc(q.id) + '</span>';
+    var critClass = "tpl-criticality crit-" + (q.criticality || "major");
+    h += '<select class="' + critClass + '" data-change="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "criticality") + '\' data-pass-value>';
+    CRITICALITY_LEVELS.forEach(function(cr) {
+        h += '<option value="' + cr + '"' + (q.criticality === cr ? " selected" : "") + '>' + esc(t("criticality." + cr)) + '</option>';
+    });
+    h += '</select>';
+    h += '<label class="tpl-question-weight">' + t("template.weight");
+    h += '<input type="number" min="0" max="100" value="' + (q.weight || 0) + '" data-input="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "weight") + '\' data-pass-value>';
+    h += '</label>';
+    h += '<span style="flex:1"></span>';
+    h += '<button class="tpl-icon-btn"' + (qi === 0 ? ' disabled' : '') + ' data-click="moveQuestion" data-args=\'' + _da(tpl.id, section.id, q.id, -1) + '\' title="' + esc(t("common.move_up")) + '">&uarr;</button>';
+    h += '<button class="tpl-icon-btn"' + (qi === total - 1 ? ' disabled' : '') + ' data-click="moveQuestion" data-args=\'' + _da(tpl.id, section.id, q.id, 1) + '\' title="' + esc(t("common.move_down")) + '">&darr;</button>';
+    h += '<button class="tpl-icon-btn danger" data-click="deleteQuestion" data-args=\'' + _da(tpl.id, section.id, q.id) + '\' title="' + esc(t("common.delete")) + '">&times;</button>';
+    h += '</div>';
+    // Question text
+    h += '<textarea class="tpl-question-text" rows="2" placeholder="' + esc(t("template.question_text")) + '" data-input="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "text") + '\' data-pass-value>' + esc(q.text || "") + '</textarea>';
+    // Expected answer / evidence
+    h += '<textarea class="tpl-question-expected" rows="1" placeholder="' + esc(t("template.question_expected")) + '" data-input="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "expected") + '\' data-pass-value>' + esc(q.expected || "") + '</textarea>';
+    h += '</div>';
+    return h;
+}
+
+function closeTemplateEditor() {
+    _editingTemplateId = null;
+    renderPanel();
+}
+window.closeTemplateEditor = closeTemplateEditor;
+
+// ── Template/section/question edit handlers ────────────────────
+function _findTemplate(tplId) {
+    return (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
+}
+function _findSection(tpl, sectionId) {
+    if (!tpl || !tpl.sections) return null;
+    return tpl.sections.find(function(s) { return s.id === sectionId; });
+}
+function _findQuestion(section, questionId) {
+    if (!section || !section.questions) return null;
+    return section.questions.find(function(q) { return q.id === questionId; });
+}
+function _touchTemplate(tpl) {
+    tpl.updated_at = _today();
+    _autoSave();
+}
+
+function _onTemplateFieldChange(tplId, field, value) {
+    var tpl = _findTemplate(tplId);
+    if (!tpl) return;
+    tpl[field] = value;
+    _touchTemplate(tpl);
+    // Update title in header live
+    if (field === "name") {
+        var h2 = document.querySelector("#content h2");
+        if (h2) h2.textContent = value;
+    }
+}
+window._onTemplateFieldChange = _onTemplateFieldChange;
+
+function _onSectionFieldChange(tplId, sectionId, field, value) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    if (!section) return;
+    section[field] = value;
+    _touchTemplate(tpl);
+}
+window._onSectionFieldChange = _onSectionFieldChange;
+
+function _onQuestionFieldChange(tplId, sectionId, questionId, field, value) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    var q = _findQuestion(section, questionId);
+    if (!q) return;
+    if (field === "weight") {
+        var n = parseInt(value, 10);
+        q.weight = isNaN(n) ? 0 : Math.max(0, Math.min(100, n));
+    } else {
+        q[field] = value;
+    }
+    _touchTemplate(tpl);
+    // Re-render only on type change (options editor appears/disappears)
+    if (field === "type") renderPanel();
+}
+window._onQuestionFieldChange = _onQuestionFieldChange;
+
+function addSection(tplId) {
+    var tpl = _findTemplate(tplId);
+    if (!tpl) return;
+    if (!tpl.sections) tpl.sections = [];
+    tpl.sections.push({
+        id: _nextSectionId(tpl),
+        title: t("template.new_section"),
+        description: "",
+        questions: []
+    });
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.addSection = addSection;
+
+function deleteSection(tplId, sectionId) {
+    if (!confirm(t("template.confirm_delete_section"))) return;
+    var tpl = _findTemplate(tplId);
+    if (!tpl) return;
+    tpl.sections = tpl.sections.filter(function(s) { return s.id !== sectionId; });
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.deleteSection = deleteSection;
+
+function moveSection(tplId, sectionId, delta) {
+    var tpl = _findTemplate(tplId);
+    if (!tpl || !tpl.sections) return;
+    var idx = tpl.sections.findIndex(function(s) { return s.id === sectionId; });
+    var newIdx = idx + delta;
+    if (idx < 0 || newIdx < 0 || newIdx >= tpl.sections.length) return;
+    var tmp = tpl.sections[idx];
+    tpl.sections[idx] = tpl.sections[newIdx];
+    tpl.sections[newIdx] = tmp;
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.moveSection = moveSection;
+
+function addQuestion(tplId, sectionId) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    if (!section) return;
+    if (!section.questions) section.questions = [];
+    section.questions.push({
+        id: _nextQuestionId(tpl),
+        type: "free_text",
+        text: "",
+        description: "",
+        expected: "",
+        weight: 5,
+        criticality: "major",
+        options: []
+    });
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.addQuestion = addQuestion;
+
+function deleteQuestion(tplId, sectionId, questionId) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    if (!section) return;
+    section.questions = section.questions.filter(function(q) { return q.id !== questionId; });
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.deleteQuestion = deleteQuestion;
+
+function moveQuestion(tplId, sectionId, questionId, delta) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    if (!section || !section.questions) return;
+    var idx = section.questions.findIndex(function(q) { return q.id === questionId; });
+    var newIdx = idx + delta;
+    if (idx < 0 || newIdx < 0 || newIdx >= section.questions.length) return;
+    var tmp = section.questions[idx];
+    section.questions[idx] = section.questions[newIdx];
+    section.questions[newIdx] = tmp;
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.moveQuestion = moveQuestion;
+
+function addOption(tplId, sectionId, questionId) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    var q = _findQuestion(section, questionId);
+    if (!q) return;
+    if (!q.options) q.options = [];
+    q.options.push("");
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.addOption = addOption;
+
+function deleteOption(tplId, sectionId, questionId, optionIdx) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    var q = _findQuestion(section, questionId);
+    if (!q || !q.options) return;
+    q.options.splice(optionIdx, 1);
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.deleteOption = deleteOption;
+
+function _onOptionChange(tplId, sectionId, questionId, optionIdx, value) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    var q = _findQuestion(section, questionId);
+    if (!q || !q.options) return;
+    q.options[optionIdx] = value;
+    _touchTemplate(tpl);
+}
+window._onOptionChange = _onOptionChange;
+
+// ═══════════════════════════════════════════════════════════════
+// ASSESSMENTS V2 (template-driven)
+// ═══════════════════════════════════════════════════════════════
+//
+// Extended assessment data model (stored in D.assessments[], alongside
+// legacy assessments). A template-driven assessment carries:
+//
+//   {
+//     id, vendor_id, type: "periodic",
+//     date, due_date,                                 (new)
+//     template_id, template_version, template_snapshot,  (new — snapshot
+//                                                         is frozen at
+//                                                         creation so the
+//                                                         assessment stays
+//                                                         valid if the
+//                                                         template later
+//                                                         evolves)
+//     status: draft | in_progress | pending_approval | validated | rejected
+//     responses: [                                    (new shape)
+//       {
+//         question_id,
+//         coverage: covered | partial | not_covered | not_applicable,
+//         answer,                                      (type-dependent:
+//                                                       yes_no: "yes"/"no"
+//                                                       scale_1_5: 1..5
+//                                                       single_choice: string
+//                                                       multi_choice: string[]
+//                                                       free_text: string
+//                                                       file_upload: {name,size,hash})
+//         comment,
+//         action_plans: [                              (required when
+//           { id, title, description, target_date, owner, status }
+//         ],
+//         justification                                (optional when
+//                                                       partial/not_covered
+//                                                       and no action plan)
+//       }
+//     ],
+//     self_validation: false,
+//     self_validated_at: null,
+//     score, completion_rate,
+//     approved_at, approved_by, rejected_reason
+//   }
+//
+// Legacy assessments (without template_id) continue to work via the old
+// openAssessment / setAnswer / saveAssessment functions.
+// ═══════════════════════════════════════════════════════════════
+
+var _assessmentV2Returning = null; // vendorIdx to return to after save
+
+function _nextAssessmentId() {
+    var n = (D.assessments || []).length + 1;
+    var id;
+    do {
+        id = "EVAL-" + String(n).padStart(3, "0");
+        n++;
+    } while ((D.assessments || []).some(function(a) { return a.id === id; }));
+    return id;
+}
+
+function _getAssessmentTemplate(a) {
+    if (a.template_snapshot) return a.template_snapshot;
+    if (!a.template_id) return null;
+    return (D.questionnaire_templates || []).find(function(tp) { return tp.id === a.template_id; }) || null;
+}
+
+// Returns the "kind" (questionnaire | audit) for an assessment,
+// defaulting to "questionnaire" for legacy data.
+function _assessmentKind(a) {
+    var tpl = _getAssessmentTemplate(a);
+    return (tpl && tpl.kind) || "questionnaire";
+}
+
+// Pick the right i18n key based on the assessment kind. Falls back to the
+// generic key if the kind-specific one is missing.
+function _tk(a, baseKey) {
+    var kind = _assessmentKind(a);
+    var specific = baseKey + "_" + kind;
+    var val = t(specific);
+    if (val && val !== specific) return val;
+    return t(baseKey);
+}
+
+function _allQuestions(tpl) {
+    if (!tpl || !tpl.sections) return [];
+    var out = [];
+    tpl.sections.forEach(function(s) {
+        (s.questions || []).forEach(function(q) { out.push(Object.assign({}, q, { section_id: s.id, section_title: s.title })); });
+    });
+    return out;
+}
+
+function _newAssessmentFromTemplate(vendorId) {
+    var tplSelect = document.getElementById("na-template");
+    var dueEl = document.getElementById("na-due-date");
+    if (!tplSelect || !dueEl) return;
+    var tplId = tplSelect.value;
+    var tpl = (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
+    if (!tpl) return;
+
+    var assessId = _nextAssessmentId();
+    // Pre-populate responses with empty objects for each question
+    var responses = _allQuestions(tpl).map(function(q) {
+        return {
+            question_id: q.id,
+            coverage: null,
+            answer: q.type === "multi_choice" ? [] : null,
+            comment: "",
+            action_plans: [],
+            justification: ""
+        };
+    });
+
+    D.assessments.push({
+        id: assessId,
+        vendor_id: vendorId,
+        type: "periodic",
+        date: _today(),
+        due_date: dueEl.value || "",
+        template_id: tpl.id,
+        template_version: tpl.version || 1,
+        template_snapshot: JSON.parse(JSON.stringify(tpl)),
+        status: "draft",
+        responses: responses,
+        self_validation: false,
+        self_validated_at: null,
+        score: null,
+        completion_rate: 0
+    });
+    _autoSave();
+    closeModal();
+    if (_selectedVendor !== null) _assessmentV2Returning = _selectedVendor;
+    openAssessmentV2(assessId);
+}
+window._newAssessmentFromTemplate = _newAssessmentFromTemplate;
+
+// ── Renderer ──────────────────────────────────────────────────
+function openAssessmentV2(assessId) {
+    var a = D.assessments.find(function(x) { return x.id === assessId; });
+    if (!a || !a.template_snapshot) { openAssessment(assessId); return; } // legacy path
+    // Recompute stats every time we render — covers cases where the assessment
+    // was touched before the latest stats algorithm change.
+    _touchAssessment(a);
+    var v = D.vendors.find(function(x) { return x.id === a.vendor_id; });
+    var tpl = a.template_snapshot;
+    var qs = _allQuestions(tpl);
+    var totalQ = qs.length;
+
+    var stats = _assessmentStats(a);
+    var answered = stats.answered;
+    var completion = totalQ > 0 ? Math.round((answered / totalQ) * 100) : 0;
+    var score = _computeAssessmentV2Score(a);
+
+    // ── Header ──
+    var kind = _assessmentKind(a);
+    var h = '<div class="tpl-header">';
+    h += '<button class="btn-add" data-click="_backFromAssessmentV2">&laquo; ' + t("nav.assessments") + '</button>';
+    h += '<h2>' + esc(a.id) + ' — ' + esc(_vendorName(a.vendor_id)) + '</h2>';
+    h += '<span class="tpl-kind-badge tpl-kind-' + kind + '">' + esc(t("template.kind_" + kind)) + '</span>';
+    h += '<span class="tpl-meta">' + esc(tpl.name) + ' v' + (a.template_version || 1) + '</span>';
+    h += '</div>';
+
+    // Status + due date + score
+    h += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:0.82em;color:var(--gray-dark)">';
+    h += '<span>' + esc(t("assessment.status")) + ' <strong class="evalv2-status evalv2-status-' + esc(a.status || "draft") + '">' + esc(t("assessment.status_" + (a.status || "draft"))) + '</strong></span>';
+    if (a.due_date) h += '<span>' + esc(t("assessment.due_date")) + ' <strong>' + esc(a.due_date) + '</strong></span>';
+    h += '<span style="flex:1"></span>';
+    h += '<div class="score-gauge"><span class="score-val ' + _scoreColorClass(score) + '">' + score + '%</span></div>';
+    h += '</div>';
+
+    // Progress
+    h += '<div id="evalv2-progress-wrap" style="margin-bottom:14px">';
+    h += '<div style="display:flex;align-items:center;gap:10px">';
+    h += '<div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden">';
+    h += '<div id="evalv2-progress-bar" style="width:' + completion + '%;height:100%;background:' + (completion === 100 ? 'var(--green)' : 'var(--light-blue)') + ';border-radius:4px;transition:width 0.3s"></div>';
+    h += '</div>';
+    h += '<span id="evalv2-progress-label" style="font-size:0.82em;font-weight:600;color:' + (completion === 100 ? 'var(--green)' : 'var(--gray-dark)') + '">' + completion + '% (' + answered + '/' + totalQ + ')</span>';
+    h += '</div>';
+    // Completeness hints
+    h += '<div id="evalv2-hints">' + _renderAssessmentHints(stats) + '</div>';
+    h += '</div>';
+
+    // Actions toolbar
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
+    h += '<button class="btn-add" data-click="_exportAssessmentJSON" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.export_json")) + '</button>';
+    // Portal link only makes sense for questionnaires sent to vendors.
+    // For audits the auditor fills the questionnaire with their own tools,
+    // so the link flow does not apply.
+    if (kind !== "audit") {
+        h += '<button class="btn-add" style="background:var(--violet)" data-click="_exportAssessmentLink" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.export_link")) + '</button>';
+    }
+    h += '<button class="btn-add" data-click="_exportAssessmentExcel" data-args=\'' + _da(a.id) + '\'>' + esc(_tk(a, "assessment.export_excel")) + '</button>';
+    h += '<button class="btn-add" data-click="_importAssessmentIntoExisting" data-args=\'' + _da(a.id) + '\'>' + esc(_tk(a, "assessment.import_response")) + '</button>';
+    h += '<span style="flex:1"></span>';
+    if (a.status === "pending_approval") {
+        h += '<button class="btn-add" style="background:var(--green)" data-click="_approveAssessment" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.approve")) + '</button>';
+        h += '<button class="btn-del" data-click="_rejectAssessment" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.reject")) + '</button>';
+    }
+    h += '</div>';
+
+    // ── Sections + questions ──
+    tpl.sections.forEach(function(section) {
+        h += '<div class="tpl-section">';
+        h += '<div class="tpl-section-header">';
+        h += '<span class="tpl-section-id">' + esc(section.id) + '</span>';
+        h += '<span class="tpl-section-title" style="border:none;font-size:1em;font-weight:700">' + esc(section.title) + '</span>';
+        h += '</div>';
+        if (section.description) {
+            h += '<div style="font-size:0.85em;color:var(--gray-dark);margin-bottom:10px">' + esc(section.description) + '</div>';
+        }
+        (section.questions || []).forEach(function(q) {
+            var resp = (a.responses || []).find(function(r) { return r.question_id === q.id; }) || {};
+            h += _renderAssessmentQuestion(a, section, q, resp);
+        });
+        h += '</div>';
+    });
+
+    // Self-validation
+    var canValidate = completion === 100;
+    var validationBlockStyle = canValidate ? "border-color:var(--light-blue)" : "border-color:var(--gray-light);opacity:0.75";
+    h += '<div id="evalv2-validation-block" class="tpl-section" style="' + validationBlockStyle + '">';
+    h += '<div class="tpl-section-header">';
+    h += '<span class="tpl-section-title" style="border:none;font-size:1em;font-weight:700">' + esc(_tk(a, "assessment.self_validation_title")) + '</span>';
+    h += '</div>';
+    h += '<p style="font-size:0.85em;color:var(--gray-dark);margin:0 0 10px">' + esc(_tk(a, "assessment.self_validation_hint")) + '</p>';
+    var cursor = canValidate ? "pointer" : "not-allowed";
+    var labelTitle = canValidate ? "" : ' title="' + esc(t("assessment.complete_all_questions")) + '"';
+    h += '<label id="evalv2-validation-label" style="display:flex;align-items:center;gap:8px;font-size:0.9em;font-weight:600;cursor:' + cursor + '"' + labelTitle + '>';
+    h += '<input type="checkbox" id="evalv2-validation-check"' + (a.self_validation ? " checked" : "") + (canValidate ? "" : " disabled") + ' data-change="_toggleSelfValidation" data-args=\'' + _da(a.id) + '\' data-pass-checked>';
+    h += '<span>' + esc(_tk(a, "assessment.self_validation_label")) + '</span>';
+    h += '</label>';
+    // Helper text when disabled
+    h += '<div id="evalv2-validation-helper" style="font-size:0.78em;color:var(--orange);margin-top:6px;display:' + (canValidate ? "none" : "block") + '">';
+    h += '&#9888; ' + esc(t("assessment.complete_all_questions"));
+    h += '</div>';
+    if (a.self_validated_at) {
+        h += '<div id="evalv2-validated-on" style="font-size:0.78em;color:var(--gray-dark);margin-top:6px">' + esc(t("assessment.self_validated_on")) + ' ' + esc(a.self_validated_at) + '</div>';
+    }
+    h += '</div>';
+
+    // Footer: Save + Submit for approval
+    h += '<div class="form-actions">';
+    h += '<button class="btn-add" data-click="_backFromAssessmentV2">' + esc(t("common.close")) + '</button>';
+    h += '<span id="evalv2-submit-wrap">' + _renderSubmitButton(a, completion) + '</span>';
+    h += '</div>';
+
+    var c = document.getElementById("content");
+    c.innerHTML = h;
+}
+window.openAssessmentV2 = openAssessmentV2;
+
+function _renderAssessmentQuestion(a, section, q, resp) {
+    var h = '<div class="tpl-question" style="background:white">';
+    // Header
+    h += '<div class="tpl-question-header">';
+    h += '<span class="tpl-question-id">' + esc(q.id) + '</span>';
+    var critClass = "crit-" + (q.criticality || "major");
+    h += '<span class="crit-badge ' + critClass + '">' + esc(t("criticality." + (q.criticality || "major"))) + '</span>';
+    h += '<span class="tpl-question-id" style="min-width:auto;border:none;background:var(--bg-subtle)">' + esc(t("qtype." + (q.type || "free_text"))) + '</span>';
+    h += '</div>';
+    // Question text
+    h += '<div style="font-weight:600;font-size:0.95em;margin:6px 0">' + esc(q.text || "") + '</div>';
+    if (q.expected) {
+        h += '<details style="margin-bottom:8px"><summary style="font-size:0.78em;color:var(--light-blue);cursor:pointer">' + esc(t("assessment.expected")) + '</summary>';
+        h += '<div style="font-size:0.82em;color:var(--gray-dark);padding:6px 0">' + esc(q.expected) + '</div>';
+        h += '</details>';
+    }
+    // Type-specific input
+    h += _renderAnswerInput(a.id, q, resp);
+    // Coverage pills
+    h += '<div style="margin-top:10px">';
+    h += '<div style="font-size:0.74em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:4px">' + esc(t("assessment.coverage")) + '</div>';
+    h += '<div class="answer-pills">';
+    ["covered", "partial", "not_covered", "not_applicable"].forEach(function(cov) {
+        var sel = resp.coverage === cov ? " selected" : "";
+        var cls = cov === "covered" ? "compliant" : (cov === "partial" ? "partial" : (cov === "not_covered" ? "non_compliant" : ""));
+        h += '<div class="answer-pill ' + cls + sel + '" data-click="_setCoverage" data-args=\'' + _da(a.id, q.id, cov) + '\'>' + esc(t("coverage." + cov)) + '</div>';
+    });
+    h += '</div>';
+    h += '</div>';
+    // Comment
+    h += '<div style="margin-top:8px">';
+    h += '<textarea rows="2" class="tpl-question-expected" placeholder="' + esc(t("assessment.comment")) + '" data-input="_onAssessmentCommentChange" data-args=\'' + _da(a.id, q.id) + '\' data-pass-value>' + esc(resp.comment || "") + '</textarea>';
+    h += '</div>';
+    // Action plans (only when partial / not_covered)
+    if (resp.coverage === "partial" || resp.coverage === "not_covered") {
+        var hasAction = (resp.action_plans && resp.action_plans.length > 0 &&
+            resp.action_plans.some(function(ap) { return (ap.title || "").trim().length > 0; }));
+        var hasJust = (resp.justification || "").trim().length > 0;
+        var satisfied = hasAction || hasJust;
+        var blockColor = satisfied ? "var(--green)" : "var(--orange)";
+        var blockBg = satisfied ? "#ecfdf5" : "#fff7ed";
+        h += '<div id="actionblk-' + esc(a.id) + '-' + esc(q.id) + '" style="margin-top:10px;padding:12px;background:' + blockBg + ';border-radius:4px;border-left:4px solid ' + blockColor + '">';
+        // Explicit banner
+        if (!satisfied) {
+            h += '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">';
+            h += '<span style="color:var(--orange);font-size:1.1em;line-height:1">&#9888;</span>';
+            h += '<div>';
+            h += '<div style="font-size:0.85em;font-weight:700;color:#7c2d12">' + esc(_tk(a, "assessment.action_required_title")) + '</div>';
+            h += '<div style="font-size:0.78em;color:#7c2d12;margin-top:2px">' + esc(resp.coverage === "partial" ? _tk(a, "assessment.action_required_partial") : _tk(a, "assessment.action_required_not_covered")) + '</div>';
+            h += '</div>';
+            h += '</div>';
+        } else {
+            h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#166534;font-size:0.82em;font-weight:600">';
+            h += '<span>&#10003;</span>';
+            h += esc(hasAction ? _tk(a, "assessment.action_recorded") : _tk(a, "assessment.justification_recorded"));
+            h += '</div>';
+        }
+        // Action list
+        if (resp.action_plans && resp.action_plans.length) {
+            h += '<div style="font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:6px">' + esc(_tk(a, "assessment.action_plan_required")) + '</div>';
+            resp.action_plans.forEach(function(ap, api) {
+                h += _renderActionPlanForm(a, q.id, ap, api);
+            });
+        }
+        h += '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">';
+        h += '<button class="btn-add" style="background:' + (satisfied ? "var(--light-blue)" : "var(--orange)") + ';margin:0" data-click="_addActionPlan" data-args=\'' + _da(a.id, q.id) + '\'>+ ' + esc(_tk(a, "assessment.add_action_plan")) + '</button>';
+        h += '</div>';
+        // Justification (alternative)
+        h += '<div style="margin-top:10px">';
+        h += '<label style="font-size:0.78em;font-weight:600;color:var(--gray-dark);display:block;margin-bottom:3px">' + esc(_tk(a, "assessment.justification_or")) + '</label>';
+        h += '<textarea rows="2" class="tpl-question-expected" placeholder="' + esc(_tk(a, "assessment.justification_placeholder")) + '" data-input="_onAssessmentJustificationChange" data-args=\'' + _da(a.id, q.id) + '\' data-pass-value>' + esc(resp.justification || "") + '</textarea>';
+        h += '</div>';
+        h += '</div>';
+    }
+    h += '</div>';
+    return h;
+}
+
+function _renderAnswerInput(assessId, q, resp) {
+    // Templates only carry free_text questions now. We keep this function
+    // because it is still called once per question; rendering a textarea
+    // is the only path.
+    var val = resp.answer;
+    return '<textarea rows="3" class="tpl-question-text" placeholder="' + esc(t("assessment.your_answer")) + '" data-input="_setAnswerV2Text" data-args=\'' + _da(assessId, q.id) + '\' data-pass-value>' + esc(val || "") + '</textarea>';
+}
+
+function _renderActionPlanForm(a, qId, ap, api) {
+    var assessId = a.id;
+    var h = '<div style="background:white;border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px">';
+    h += '<div style="display:flex;gap:6px;margin-bottom:6px">';
+    h += '<input type="text" value="' + esc(ap.title || "") + '" placeholder="' + esc(_tk(a, "assessment.ap_title")) + '" style="flex:1;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "title") + '\' data-pass-value>';
+    h += '<input type="date" value="' + esc(ap.target_date || "") + '" style="padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "target_date") + '\' data-pass-value>';
+    h += '<input type="text" value="' + esc(ap.owner || "") + '" placeholder="' + esc(_tk(a, "assessment.ap_owner")) + '" style="width:120px;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "owner") + '\' data-pass-value>';
+    h += '<button class="tpl-icon-btn danger" data-click="_removeActionPlan" data-args=\'' + _da(assessId, qId, api) + '\' title="' + esc(t("common.delete")) + '">&times;</button>';
+    h += '</div>';
+    h += '<textarea rows="2" placeholder="' + esc(_tk(a, "assessment.ap_description")) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em;font-family:inherit;box-sizing:border-box;resize:vertical" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "description") + '\' data-pass-value>' + esc(ap.description || "") + '</textarea>';
+    h += '</div>';
+    return h;
+}
+
+// ── Handlers ──────────────────────────────────────────────────
+function _findAssessment(assessId) {
+    return (D.assessments || []).find(function(a) { return a.id === assessId; });
+}
+
+function _findAssessmentResp(a, questionId) {
+    if (!a || !a.responses) return null;
+    return a.responses.find(function(r) { return r.question_id === questionId; });
+}
+
+function _renderSubmitButton(a, completion) {
+    var canSubmit = a.self_validation && completion === 100 && a.status !== "validated" && a.status !== "pending_approval";
+    var reason = "";
+    if (a.status === "validated") reason = t("assessment.already_validated");
+    else if (a.status === "pending_approval") reason = t("assessment.already_submitted");
+    else if (completion < 100) reason = t("assessment.complete_all_questions");
+    else if (!a.self_validation) reason = t("assessment.check_self_validation");
+    if (canSubmit) {
+        return '<button class="btn-add" style="background:var(--light-blue)" data-click="_submitForApproval" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.submit_for_approval")) + '</button>';
+    }
+    return '<button class="btn-add" style="background:var(--gray-light);color:var(--gray-dark);cursor:not-allowed" disabled data-tooltip="' + esc(reason) + '" title="' + esc(reason) + '">' + esc(t("assessment.submit_for_approval")) + '</button>';
+}
+
+function _renderAssessmentHints(stats) {
+    if (stats.missingCoverage === 0 && stats.missingActionPlan === 0) return "";
+    var h = '<div style="font-size:0.8em;margin-top:6px;padding:8px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:4px;color:#7c2d12">';
+    if (stats.missingCoverage > 0) {
+        h += '<div style="margin-bottom:' + (stats.missingActionPlan > 0 ? "4px" : "0") + '">';
+        h += '<span style="font-weight:700">&#9888; ' + stats.missingCoverage + ' ' + esc(t("assessment.without_coverage")) + '</span>';
+        h += '</div>';
+    }
+    if (stats.missingActionPlan > 0) {
+        h += '<div>';
+        h += '<span style="font-weight:700">&#9888; ' + stats.missingActionPlan + ' ' + esc(t("assessment.without_action_plan_long")) + '</span>';
+        h += '</div>';
+    }
+    h += '</div>';
+    return h;
+}
+
+// Stats for an assessment — unique source of truth used everywhere.
+function _assessmentStats(a) {
+    var total = (a.responses || []).length;
+    var answered = 0, missingCoverage = 0, missingActionPlan = 0;
+    (a.responses || []).forEach(function(r) {
+        if (!r.coverage) { missingCoverage++; return; }
+        if (r.coverage === "covered" || r.coverage === "not_applicable") { answered++; return; }
+        if (r.coverage === "partial" || r.coverage === "not_covered") {
+            var hasAction = (r.action_plans && r.action_plans.length > 0 &&
+                r.action_plans.some(function(ap) { return (ap.title || "").trim().length > 0; }));
+            var hasJust = (r.justification || "").trim().length > 0;
+            if (hasAction || hasJust) answered++;
+            else missingActionPlan++;
+        }
+    });
+    return { total: total, answered: answered, missingCoverage: missingCoverage, missingActionPlan: missingActionPlan };
+}
+
+// Heal the template snapshot of an assessment that was created with
+// section-scoped (duplicated) question IDs. Must remap responses so that
+// coverage/answers stay attached to the right question.
+function _healAssessmentQuestionIds(a) {
+    if (!a || !a.template_snapshot || !a.template_snapshot.sections) return;
+    // Collect (sectionId, oldIdx) → oldId mapping, then renormalize, then remap.
+    var oldIds = [];
+    a.template_snapshot.sections.forEach(function(s) {
+        (s.questions || []).forEach(function(q) { oldIds.push(q.id); });
+    });
+    var changed = _normalizeTemplateQuestionIds(a.template_snapshot);
+    if (!changed) return;
+    var newIds = [];
+    a.template_snapshot.sections.forEach(function(s) {
+        (s.questions || []).forEach(function(q) { newIds.push(q.id); });
+    });
+    // Build mapping by position (they are iterated in the same order)
+    var map = {};
+    for (var i = 0; i < oldIds.length; i++) map[oldIds[i]] = newIds[i];
+    // Responses might have duplicate entries for the same old id. Keep the
+    // first non-empty one for each new id.
+    var remapped = {};
+    (a.responses || []).forEach(function(r) {
+        var newId = map[r.question_id] || r.question_id;
+        if (!remapped[newId]) { remapped[newId] = Object.assign({}, r, { question_id: newId }); }
+    });
+    a.responses = newIds.map(function(nid) {
+        return remapped[nid] || {
+            question_id: nid, coverage: null, answer: null,
+            comment: "", action_plans: [], justification: ""
+        };
+    });
+}
+
+function _touchAssessment(a) {
+    _healAssessmentQuestionIds(a);
+    var stats = _assessmentStats(a);
+    a.completion_rate = stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0;
+    a.score = _computeAssessmentV2Score(a);
+    if (a.completion_rate > 0 && a.status === "draft") a.status = "in_progress";
+    _autoSave();
+}
+
+function _setCoverage(assessId, questionId, coverage) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.coverage = coverage;
+    if (coverage === "covered" || coverage === "not_applicable") {
+        resp.action_plans = [];
+        resp.justification = "";
+    }
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._setCoverage = _setCoverage;
+
+function _setAnswerV2(assessId, questionId, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.answer = value;
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._setAnswerV2 = _setAnswerV2;
+
+function _setAnswerV2Text(assessId, questionId, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.answer = value;
+    _refreshAssessmentLiveState(assessId, questionId);
+}
+window._setAnswerV2Text = _setAnswerV2Text;
+
+function _toggleAnswerMulti(assessId, questionId, option) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    if (!Array.isArray(resp.answer)) resp.answer = [];
+    var idx = resp.answer.indexOf(option);
+    if (idx >= 0) resp.answer.splice(idx, 1);
+    else resp.answer.push(option);
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._toggleAnswerMulti = _toggleAnswerMulti;
+
+function _uploadAnswerFile(assessId, questionId, el) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp || !el.files || !el.files[0]) return;
+    var file = el.files[0];
+    if (file.size > 500 * 1024) {
+        alert(t("assessment.file_too_large"));
+        el.value = "";
+        return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var b64 = "";
+        try {
+            var bytes = new Uint8Array(e.target.result);
+            var binary = "";
+            for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            b64 = btoa(binary);
+        } catch (err) { b64 = ""; }
+        resp.answer = { name: file.name, size: file.size, data: b64 };
+        _touchAssessment(a);
+        openAssessmentV2(assessId);
+    };
+    reader.readAsArrayBuffer(file);
+}
+window._uploadAnswerFile = _uploadAnswerFile;
+
+function _clearAnswerFile(assessId, questionId) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.answer = null;
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._clearAnswerFile = _clearAnswerFile;
+
+// Live-update the parts of the DOM that depend on completion without
+// re-rendering the whole panel (to preserve input focus while typing).
+function _refreshAssessmentLiveState(assessId, questionId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    _touchAssessment(a);
+    var stats = _assessmentStats(a);
+    var completion = stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0;
+
+    // 1. Progress bar + label
+    var bar = document.getElementById("evalv2-progress-bar");
+    var label = document.getElementById("evalv2-progress-label");
+    if (bar) {
+        bar.style.width = completion + "%";
+        bar.style.background = completion === 100 ? "var(--green)" : "var(--light-blue)";
+    }
+    if (label) {
+        label.textContent = completion + "% (" + stats.answered + "/" + stats.total + ")";
+        label.style.color = completion === 100 ? "var(--green)" : "var(--gray-dark)";
+    }
+    var hints = document.getElementById("evalv2-hints");
+    if (hints) hints.innerHTML = _renderAssessmentHints(stats);
+
+    // 2. Single question action block: update background + banner
+    if (questionId) {
+        var resp = _findAssessmentResp(a, questionId);
+        var block = document.getElementById("actionblk-" + a.id + "-" + questionId);
+        if (resp && block && (resp.coverage === "partial" || resp.coverage === "not_covered")) {
+            var hasAction = (resp.action_plans && resp.action_plans.length > 0 &&
+                resp.action_plans.some(function(ap) { return (ap.title || "").trim().length > 0; }));
+            var hasJust = (resp.justification || "").trim().length > 0;
+            var satisfied = hasAction || hasJust;
+            block.style.background = satisfied ? "#ecfdf5" : "#fff7ed";
+            block.style.borderLeftColor = satisfied ? "var(--green)" : "var(--orange)";
+            // Replace the banner (first child is always the banner div)
+            var banner = block.firstElementChild;
+            if (banner) {
+                if (satisfied) {
+                    banner.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#166534;font-size:0.82em;font-weight:600">'
+                        + '<span>&#10003;</span>'
+                        + esc(hasAction ? _tk(a, "assessment.action_recorded") : _tk(a, "assessment.justification_recorded"))
+                        + '</div>';
+                } else {
+                    banner.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">'
+                        + '<span style="color:var(--orange);font-size:1.1em;line-height:1">&#9888;</span>'
+                        + '<div>'
+                        + '<div style="font-size:0.85em;font-weight:700;color:#7c2d12">' + esc(_tk(a, "assessment.action_required_title")) + '</div>'
+                        + '<div style="font-size:0.78em;color:#7c2d12;margin-top:2px">' + esc(resp.coverage === "partial" ? _tk(a, "assessment.action_required_partial") : _tk(a, "assessment.action_required_not_covered")) + '</div>'
+                        + '</div>'
+                        + '</div>';
+                }
+            }
+        }
+    }
+
+    // 3. Self-validation checkbox: enable/disable based on completion
+    var check = document.getElementById("evalv2-validation-check");
+    var checkLabel = document.getElementById("evalv2-validation-label");
+    var checkHelper = document.getElementById("evalv2-validation-helper");
+    var validationBlock = document.getElementById("evalv2-validation-block");
+    if (check && checkLabel && checkHelper && validationBlock) {
+        if (completion === 100) {
+            check.disabled = false;
+            checkLabel.style.cursor = "pointer";
+            checkLabel.removeAttribute("title");
+            checkHelper.style.display = "none";
+            validationBlock.style.borderColor = "var(--light-blue)";
+            validationBlock.style.opacity = "1";
+        } else {
+            check.disabled = true;
+            // If the user had it checked but now completion dropped, uncheck it
+            if (check.checked) {
+                check.checked = false;
+                a.self_validation = false;
+                a.self_validated_at = null;
+                _autoSave();
+            }
+            checkLabel.style.cursor = "not-allowed";
+            checkLabel.setAttribute("title", t("assessment.complete_all_questions"));
+            checkHelper.style.display = "block";
+            validationBlock.style.borderColor = "var(--gray-light)";
+            validationBlock.style.opacity = "0.75";
+        }
+    }
+
+    // 4. Submit button
+    var submitWrap = document.getElementById("evalv2-submit-wrap");
+    if (submitWrap) submitWrap.innerHTML = _renderSubmitButton(a, completion);
+}
+
+function _onAssessmentCommentChange(assessId, questionId, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.comment = value;
+    _autoSave();
+    // comment doesn't affect completion, no live refresh needed
+}
+window._onAssessmentCommentChange = _onAssessmentCommentChange;
+
+function _onAssessmentJustificationChange(assessId, questionId, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    resp.justification = value;
+    _refreshAssessmentLiveState(assessId, questionId);
+}
+window._onAssessmentJustificationChange = _onAssessmentJustificationChange;
+
+function _addActionPlan(assessId, questionId) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp) return;
+    if (!resp.action_plans) resp.action_plans = [];
+    resp.action_plans.push({
+        id: "AP-" + String(resp.action_plans.length + 1).padStart(3, "0"),
+        title: "",
+        description: "",
+        target_date: "",
+        owner: "",
+        status: "proposed"
+    });
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._addActionPlan = _addActionPlan;
+
+function _removeActionPlan(assessId, questionId, apIdx) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp || !resp.action_plans) return;
+    resp.action_plans.splice(apIdx, 1);
+    _touchAssessment(a);
+    openAssessmentV2(assessId);
+}
+window._removeActionPlan = _removeActionPlan;
+
+function _updateActionPlanField(assessId, questionId, apIdx, field, value) {
+    var a = _findAssessment(assessId);
+    var resp = _findAssessmentResp(a, questionId);
+    if (!resp || !resp.action_plans || !resp.action_plans[apIdx]) return;
+    resp.action_plans[apIdx][field] = value;
+    _refreshAssessmentLiveState(assessId, questionId);
+}
+window._updateActionPlanField = _updateActionPlanField;
+
+function _toggleSelfValidation(assessId, checked) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    a.self_validation = !!checked;
+    a.self_validated_at = checked ? new Date().toISOString() : null;
+    _autoSave();
+    openAssessmentV2(assessId);
+}
+window._toggleSelfValidation = _toggleSelfValidation;
+
+function _submitForApproval(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    if (!a.self_validation) { alert(t("assessment.self_validation_required")); return; }
+    a.status = "pending_approval";
+    a.submitted_at = new Date().toISOString();
+    _autoSave();
+    showStatus(t("assessment.submitted"));
+    _backFromAssessmentV2();
+}
+window._submitForApproval = _submitForApproval;
+
+function _approveAssessment(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    a.status = "validated";
+    a.approved_at = new Date().toISOString();
+    // Create vendor action plan items from approved responses
+    _materializeActionPlans(a);
+    // Update vendor's maturity from the weighted aggregate of all validated assessments
+    _refreshVendorMaturity(a.vendor_id);
+    _autoSave();
+    openAssessmentV2(assessId);
+    showStatus(t("assessment.approved"));
+}
+window._approveAssessment = _approveAssessment;
+
+function _rejectAssessment(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var reason = prompt(t("assessment.reject_reason_prompt"));
+    if (reason === null) return;
+    a.status = "rejected";
+    a.rejected_reason = reason || "";
+    _autoSave();
+    openAssessmentV2(assessId);
+    showStatus(t("assessment.rejected"));
+}
+window._rejectAssessment = _rejectAssessment;
+
+function _materializeActionPlans(a) {
+    // For every action plan in the approved assessment, add a measure to the vendor
+    var v = D.vendors.find(function(x) { return x.id === a.vendor_id; });
+    if (!v) return;
+    if (!v.measures) v.measures = [];
+    (a.responses || []).forEach(function(r) {
+        (r.action_plans || []).forEach(function(ap) {
+            var existingId = v.id + "-AP-" + r.question_id + "-" + ap.id;
+            if (v.measures.some(function(m) { return m.id === existingId; })) return;
+            v.measures.push({
+                id: existingId,
+                mesure: ap.title || ("Action plan " + r.question_id),
+                details: ap.description || "",
+                type: "Organisationnelle",
+                responsable: ap.owner || "",
+                echeance: ap.target_date || "",
+                statut: "planifie",
+                source: "vendor_engagement",
+                source_assessment_id: a.id,
+                source_question_id: r.question_id
+            });
+        });
+    });
+}
+
+function _backFromAssessmentV2() {
+    if (_assessmentV2Returning !== null) {
+        _selectedVendor = _assessmentV2Returning;
+        _vendorTab = "assessments";
+        _assessmentV2Returning = null;
+    }
+    _panel = "vendors";
+    renderPanel();
+}
+window._backFromAssessmentV2 = _backFromAssessmentV2;
+
+// ── Scoring V2 ────────────────────────────────────────────────
+function _computeAssessmentV2Score(a) {
+    var tpl = _getAssessmentTemplate(a);
+    if (!tpl) return 0;
+    var qs = _allQuestions(tpl);
+    var total = 0, max = 0;
+    (a.responses || []).forEach(function(r) {
+        if (r.coverage === "not_applicable") return;
+        var q = qs.find(function(x) { return x.id === r.question_id; });
+        if (!q) return;
+        var w = q.weight || 1;
+        max += w;
+        if (r.coverage === "covered") total += w;
+        else if (r.coverage === "partial") total += w * 0.5;
+        // not_covered or null → 0
+    });
+    return max > 0 ? Math.round((total / max) * 100) : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WEIGHTED MATURITY SCORE (vendor-level aggregation)
+// ═══════════════════════════════════════════════════════════════
+//
+// Instead of reflecting only the last validated assessment, the vendor's
+// maturity score is now a weighted average of every validated assessment
+// attached to that vendor. Each assessment contributes according to:
+//
+//   - a base weight derived from:
+//       * weight_override (per-assessment manual value) if set,
+//       * otherwise weight_by_template[template_id] if set,
+//       * otherwise weight_by_kind[kind] (defaults 1.0 questionnaire,
+//         1.5 audit),
+//       * otherwise 1.0
+//   - a temporal decay, if maturity_config.decay_per_quarter > 0:
+//         effective = base * (1 - decay * quartersAgo),
+//         floored at maturity_config.min_effective_weight
+//   - excluded assessments (a.excluded === true) are skipped entirely.
+//
+// Legacy assessments (no template_id) are treated as kind = "questionnaire"
+// so they keep contributing to the score even after migration.
+// ═══════════════════════════════════════════════════════════════
+
+function _maturityConfig() {
+    var cfg = D.maturity_config || {};
+    return {
+        weight_by_kind: cfg.weight_by_kind || { questionnaire: 1.0, audit: 1.5 },
+        weight_by_template: cfg.weight_by_template || {},
+        decay_per_quarter: typeof cfg.decay_per_quarter === "number" ? cfg.decay_per_quarter : 0.0,
+        min_effective_weight: typeof cfg.min_effective_weight === "number" ? cfg.min_effective_weight : 0.1
+    };
+}
+
+function _quartersBetween(dateStr, now) {
+    if (!dateStr) return 0;
+    var d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 0;
+    var ref = now || new Date();
+    var months = (ref.getFullYear() - d.getFullYear()) * 12 + (ref.getMonth() - d.getMonth());
+    return Math.max(0, Math.floor(months / 3));
+}
+
+// Returns the detail of the weighted maturity score for a vendor.
+// Shape:
+//   { score: 0..100, rows: [
+//       { assessment, base, decay, effective, excluded, contribution }
+//     ], sum_weights, sum_weighted }
+function _computeVendorMaturityDetail(vendorId) {
+    var cfg = _maturityConfig();
+    var all = (D.assessments || []).filter(function(a) {
+        return a.vendor_id === vendorId && a.status === "validated";
+    });
+    var now = new Date();
+    var rows = [];
+    var sumW = 0, sumS = 0;
+
+    all.forEach(function(a) {
+        var tpl = _getAssessmentTemplate(a);
+        var kind = (tpl && tpl.kind) || "questionnaire";
+        var base;
+        if (typeof a.weight_override === "number") {
+            base = a.weight_override;
+        } else if (tpl && cfg.weight_by_template[tpl.id] != null) {
+            base = cfg.weight_by_template[tpl.id];
+        } else {
+            base = cfg.weight_by_kind[kind] != null ? cfg.weight_by_kind[kind] : 1.0;
+        }
+        var quarters = _quartersBetween(a.approved_at || a.submitted_at || a.date, now);
+        var decayMult = 1 - (cfg.decay_per_quarter || 0) * quarters;
+        if (decayMult < 0) decayMult = 0;
+        var effective = Math.max(cfg.min_effective_weight, base * decayMult);
+        var score = typeof a.score === "number" ? a.score : 0;
+        var row = {
+            assessment: a,
+            kind: kind,
+            base: base,
+            quarters: quarters,
+            decay_mult: decayMult,
+            effective: a.excluded ? 0 : effective,
+            excluded: !!a.excluded,
+            score: score,
+            contribution: a.excluded ? 0 : score * effective
+        };
+        rows.push(row);
+        if (!a.excluded) {
+            sumW += effective;
+            sumS += score * effective;
+        }
+    });
+
+    var finalScore = sumW > 0 ? Math.round(sumS / sumW) : 0;
+    return { score: finalScore, rows: rows, sum_weights: sumW, sum_weighted: sumS };
+}
+
+function _maturityRowTemplateName(row) {
+    var a = row.assessment;
+    if (a.template_snapshot) return a.template_snapshot.name || "";
+    if (a.template_id) {
+        var tpl = (D.questionnaire_templates || []).find(function(tp) { return tp.id === a.template_id; });
+        if (tpl) return tpl.name;
+    }
+    return t("assessment.type_" + (a.type || "periodic"));
+}
+
+// Render the weighted maturity detail panel (collapsed by default on vendor detail)
+function _renderVendorMaturityDetail(v) {
+    var detail = _computeVendorMaturityDetail(v.id);
+    if (!detail.rows.length) return "";
+    var cfg = _maturityConfig();
+    var h = '<details class="maturity-detail" style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg)">';
+    h += '<summary style="padding:10px 14px;cursor:pointer;font-weight:600;font-size:0.9em;list-style:none;display:flex;align-items:center;gap:10px">';
+    h += '<span>' + esc(t("maturity.detail_title")) + '</span>';
+    h += '<span style="flex:1"></span>';
+    h += '<span style="font-size:0.82em;color:var(--gray-dark);font-weight:400">' + detail.rows.length + ' ' + esc(t("maturity.validated_count")) + '</span>';
+    h += '<span class="score-val ' + _scoreColorClass(detail.score) + '" style="font-size:1.4em">' + detail.score + '%</span>';
+    h += '</summary>';
+    h += '<div style="padding:0 14px 14px">';
+    h += '<p style="font-size:0.82em;color:var(--gray-dark);margin:0 0 10px">' + esc(t("maturity.detail_intro")) + '</p>';
+
+    // Global config block
+    h += '<div style="padding:10px 12px;background:var(--bg);border-radius:6px;margin-bottom:12px">';
+    h += '<div style="font-size:0.75em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:8px">' + esc(t("maturity.global_config")) + '</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">';
+    h += '<div><label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("maturity.weight_questionnaire")) + '</label>';
+    h += '<input type="number" step="0.1" min="0" value="' + (cfg.weight_by_kind.questionnaire || 1) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px" data-input="_updateMaturityConfig" data-args=\'["weight_by_kind.questionnaire"]\' data-pass-value></div>';
+    h += '<div><label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("maturity.weight_audit")) + '</label>';
+    h += '<input type="number" step="0.1" min="0" value="' + (cfg.weight_by_kind.audit || 1.5) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px" data-input="_updateMaturityConfig" data-args=\'["weight_by_kind.audit"]\' data-pass-value></div>';
+    h += '<div><label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("maturity.decay_per_quarter")) + '</label>';
+    h += '<input type="number" step="0.05" min="0" max="1" value="' + (cfg.decay_per_quarter || 0) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px" data-input="_updateMaturityConfig" data-args=\'["decay_per_quarter"]\' data-pass-value></div>';
+    h += '</div>';
+    h += '</div>';
+
+    // Table of contributing assessments
+    h += '<table style="width:100%;font-size:0.82em;border-collapse:collapse">';
+    h += '<thead><tr style="background:var(--bg);color:var(--gray-dark);text-transform:uppercase;font-size:0.72em">';
+    h += '<th style="text-align:left;padding:6px 8px">ID</th>';
+    h += '<th style="text-align:left;padding:6px 8px">' + esc(t("maturity.col_template")) + '</th>';
+    h += '<th style="text-align:center;padding:6px 8px">' + esc(t("maturity.col_kind")) + '</th>';
+    h += '<th style="text-align:right;padding:6px 8px">' + esc(t("maturity.col_score")) + '</th>';
+    h += '<th style="text-align:right;padding:6px 8px">' + esc(t("maturity.col_base_weight")) + '</th>';
+    h += '<th style="text-align:right;padding:6px 8px">' + esc(t("maturity.col_decay")) + '</th>';
+    h += '<th style="text-align:right;padding:6px 8px">' + esc(t("maturity.col_effective_weight")) + '</th>';
+    h += '<th style="text-align:center;padding:6px 8px">' + esc(t("maturity.col_excluded")) + '</th>';
+    h += '</tr></thead><tbody>';
+    detail.rows.forEach(function(row) {
+        var a = row.assessment;
+        var tplName = _maturityRowTemplateName(row);
+        var kindLabel = t("template.kind_" + row.kind);
+        var rowStyle = row.excluded ? "opacity:0.4;text-decoration:line-through" : "";
+        h += '<tr style="border-top:1px solid var(--border);' + rowStyle + '">';
+        h += '<td style="padding:6px 8px;font-weight:600">' + esc(a.id) + '</td>';
+        h += '<td style="padding:6px 8px">' + esc(tplName) + '</td>';
+        h += '<td style="text-align:center;padding:6px 8px"><span class="tpl-kind-badge tpl-kind-' + row.kind + '">' + esc(kindLabel) + '</span></td>';
+        h += '<td style="text-align:right;padding:6px 8px;font-weight:600">' + row.score + '%</td>';
+        h += '<td style="text-align:right;padding:6px 8px">';
+        h += '<input type="number" step="0.1" min="0" value="' + row.base.toFixed(2) + '" style="width:70px;padding:2px 6px;border:1px solid var(--gray-light);border-radius:4px;text-align:right" data-input="_updateAssessmentWeightOverride" data-args=\'' + _da(a.id) + '\' data-pass-value>';
+        h += '</td>';
+        h += '<td style="text-align:right;padding:6px 8px;color:var(--gray-dark);font-size:0.78em">';
+        if (row.quarters > 0 && cfg.decay_per_quarter > 0) {
+            h += '-' + Math.round((1 - row.decay_mult) * 100) + '% (' + row.quarters + 'q)';
+        } else {
+            h += '–';
+        }
+        h += '</td>';
+        h += '<td style="text-align:right;padding:6px 8px;font-weight:600">' + row.effective.toFixed(2) + '</td>';
+        h += '<td style="text-align:center;padding:6px 8px">';
+        h += '<input type="checkbox"' + (row.excluded ? " checked" : "") + ' data-change="_toggleAssessmentExcluded" data-args=\'' + _da(a.id) + '\' data-pass-checked>';
+        h += '</td>';
+        h += '</tr>';
+    });
+    h += '<tr style="border-top:2px solid var(--border);background:var(--bg)">';
+    h += '<td colspan="6" style="padding:8px;text-align:right;font-weight:700">' + esc(t("maturity.weighted_score")) + '</td>';
+    h += '<td style="padding:8px;text-align:right;font-weight:700">' + detail.sum_weights.toFixed(2) + '</td>';
+    h += '<td style="padding:8px;text-align:center;font-weight:700" class="' + _scoreColorClass(detail.score) + '">' + detail.score + '%</td>';
+    h += '</tr>';
+    h += '</tbody></table>';
+    h += '</div>';
+    h += '</details>';
+    return h;
+}
+
+function _updateMaturityConfig(path, value) {
+    if (!D.maturity_config) D.maturity_config = {};
+    var v = parseFloat(value);
+    if (isNaN(v)) return;
+    var parts = path.split(".");
+    var obj = D.maturity_config;
+    for (var i = 0; i < parts.length - 1; i++) {
+        if (!obj[parts[i]]) obj[parts[i]] = {};
+        obj = obj[parts[i]];
+    }
+    obj[parts[parts.length - 1]] = v;
+    _autoSave();
+    // Recompute maturity for all vendors that have validated assessments
+    (D.vendors || []).forEach(function(vd) { _refreshVendorMaturity(vd.id); });
+    renderPanel();
+}
+window._updateMaturityConfig = _updateMaturityConfig;
+
+function _updateAssessmentWeightOverride(assessId, value) {
+    var a = (D.assessments || []).find(function(x) { return x.id === assessId; });
+    if (!a) return;
+    var v = parseFloat(value);
+    if (isNaN(v)) { delete a.weight_override; }
+    else { a.weight_override = v; }
+    _refreshVendorMaturity(a.vendor_id);
+    _autoSave();
+    renderPanel();
+}
+window._updateAssessmentWeightOverride = _updateAssessmentWeightOverride;
+
+function _toggleAssessmentExcluded(assessId, checked) {
+    var a = (D.assessments || []).find(function(x) { return x.id === assessId; });
+    if (!a) return;
+    a.excluded = !!checked;
+    _refreshVendorMaturity(a.vendor_id);
+    _autoSave();
+    renderPanel();
+}
+window._toggleAssessmentExcluded = _toggleAssessmentExcluded;
+
+// Apply the weighted maturity score to the vendor's exposure.maturite
+// (0..4 scale). Idempotent. Call whenever an assessment is validated,
+// excluded, weight-overridden, or its score changes.
+function _refreshVendorMaturity(vendorId) {
+    var v = D.vendors.find(function(x) { return x.id === vendorId; });
+    if (!v) return;
+    var detail = _computeVendorMaturityDetail(vendorId);
+    if (!v.exposure) v.exposure = {};
+    // If no validated assessment, leave the existing value untouched so
+    // vendors with hand-entered maturity still work.
+    if (detail.rows.length > 0) {
+        v.exposure.maturite = _scoreToMaturite(detail.score);
+        v.maturity_score = detail.score; // raw 0..100 for display
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ASSESSMENTS V2 — EXPORT / IMPORT
+// ═══════════════════════════════════════════════════════════════
+
+function _buildExportPayload(a) {
+    // Only export what is strictly needed by the vendor to fill in the questionnaire.
+    // Keeps the payload minimal and auditable.
+    return {
+        format: "ciso_toolbox_vendor_assessment",
+        version: 1,
+        assessment_id: a.id,
+        vendor_id: a.vendor_id,
+        vendor_name: _vendorName(a.vendor_id),
+        date: a.date,
+        due_date: a.due_date || "",
+        template: a.template_snapshot,
+        responses: a.responses || [],
+        exported_at: new Date().toISOString()
+    };
+}
+
+function _exportAssessmentJSON(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+
+    _showModal(
+        '<h3>' + esc(t("assessment.export_json_title")) + '</h3>' +
+        '<p style="font-size:0.85em;color:var(--gray-dark);margin-bottom:14px">' + esc(t("assessment.export_json_file_hint")) + '</p>' +
+
+        '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.encryption_password_label_optional")) + '</label>' +
+        '<input type="password" id="exp-password" placeholder="' + esc(t("assessment.encryption_password_optional")) + '" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:14px">' +
+
+        '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn-add" style="background:var(--gray-light);color:var(--text)" data-click="closeModal">' + esc(t("common.cancel")) + '</button>' +
+        '<button class="btn-add" style="background:var(--light-blue)" data-click="_doExportJSONAuto" data-args=\'' + _da(assessId) + '\'>' + esc(t("assessment.export")) + '</button>' +
+        '</div>'
+    );
+}
+window._exportAssessmentJSON = _exportAssessmentJSON;
+
+// Unified export: reads the optional password and picks plain vs encrypted.
+function _doExportJSONAuto(assessId) {
+    var pwd = (document.getElementById("exp-password") || {}).value || "";
+    _doExportJSON(assessId, !!pwd);
+}
+window._doExportJSONAuto = _doExportJSONAuto;
+
+// Dedicated modal for generating a portal link.
+function _exportAssessmentLink(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+
+    _showModal(
+        '<h3>' + esc(t("assessment.export_link_title")) + '</h3>' +
+        '<p style="font-size:0.85em;color:var(--gray-dark);margin-bottom:14px">' + esc(t("assessment.export_link_hint")) + '</p>' +
+
+        '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.encryption_password_label_required")) + '</label>' +
+        '<input type="password" id="exp-password" placeholder="' + esc(t("assessment.encryption_password_required")) + '" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:10px">' +
+
+        '<button class="btn-add" style="width:100%;background:var(--violet)" data-click="_generatePortalLink" data-args=\'' + _da(assessId) + '\'>' + esc(t("assessment.generate_link")) + '</button>' +
+
+        '<div id="exp-link-result" style="margin-top:12px;display:none"></div>'
+    );
+}
+window._exportAssessmentLink = _exportAssessmentLink;
+
+function _doExportJSON(assessId, encrypted) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var payload = _buildExportPayload(a);
+    var json = JSON.stringify(payload, null, 2);
+    var baseName = (a.id + "_" + _vendorName(a.vendor_id).replace(/\s+/g, "_") + "_questionnaire").replace(/[^a-z0-9_.-]/gi, "");
+
+    if (encrypted) {
+        var pwd = (document.getElementById("exp-password") || {}).value || "";
+        if (!pwd) { alert(t("assessment.password_required")); return; }
+        _encryptData(json, pwd).then(function(buf) {
+            var blob = new Blob([buf], { type: "application/octet-stream" });
+            _triggerDownload(blob, baseName + ".ctenc");
+            closeModal();
+            showStatus(t("assessment.exported"));
+        }).catch(function(e) { alert("Encryption failed: " + e.message); });
+    } else {
+        var blob = new Blob([json], { type: "application/json" });
+        _triggerDownload(blob, baseName + ".json");
+        closeModal();
+        showStatus(t("assessment.exported"));
+    }
+}
+window._doExportJSON = _doExportJSON;
+
+// ═══════════════════════════════════════════════════════════════
+// PORTAL LINK GENERATION
+// ═══════════════════════════════════════════════════════════════
+//
+// Builds a compact self-contained URL that the vendor can click to
+// open the portal with the questionnaire pre-loaded. The payload is:
+//   1. JSON-stringified,
+//   2. gzip-compressed via CompressionStream (or lz-string fallback),
+//   3. AES-256-GCM encrypted using the operator's password,
+//   4. base64url-encoded and placed in the URL fragment (#data=...).
+//
+// The password is never embedded in the link — the operator shares
+// it out-of-band (SMS, voice, messenger, separate email).
+//
+// Size thresholds:
+//   - <=  8 000 chars  → green  "compatible with every email client"
+//   - <= 12 000 chars  → orange "may be truncated by legacy Outlook"
+//   - >  12 000 chars  → red    "too long — switch to encrypted file"
+// ═══════════════════════════════════════════════════════════════
+
+var LINK_SIZE_GREEN = 8000;
+var LINK_SIZE_YELLOW = 12000;
+
+async function _gzipCompress(text) {
+    if (typeof CompressionStream === "undefined") {
+        // Very old browsers: just skip compression
+        return new TextEncoder().encode(text);
+    }
+    var stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+    var buf = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buf);
+}
+
+function _bytesToBase64(bytes) {
+    var binary = "";
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+}
+
+function _bytesToBase64Url(bytes) {
+    return _bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// Builds the URL that should open the portal at the same origin / path.
+function _portalBaseURL() {
+    var loc = window.location;
+    // window.location.pathname may end with /index.html or /.
+    // We want the current folder + "portal/".
+    var folder = loc.pathname.replace(/\/[^/]*$/, "/"); // keep trailing /
+    return loc.origin + folder + "portal/";
+}
+
+async function _generatePortalLink(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var pwd = (document.getElementById("exp-password") || {}).value || "";
+    if (!pwd) { alert(t("assessment.password_required")); return; }
+
+    var payload = _buildExportPayload(a);
+    var json = JSON.stringify(payload);
+
+    try {
+        // 1. compress
+        var compressed = await _gzipCompress(json);
+        // 2. base64-encode the compressed bytes so the AES plaintext is
+        //    pure ASCII (no UTF-8 round-trip surprises on binary bytes).
+        var compressedB64 = _bytesToBase64(compressed);
+        // 3. encrypt the ASCII-safe payload
+        var enc = await _encryptData(compressedB64, pwd);
+        // 4. base64url the final ciphertext
+        var b64 = _bytesToBase64Url(enc);
+        // 5. build URL with a version tag so the portal knows how to
+        //    decode (v1gz = base64(gzip(json)) then encrypted).
+        var url = _portalBaseURL() + "#data=v1gz." + b64;
+
+        // Compute thresholds
+        var size = url.length;
+        var statusKey, statusColor, statusBg;
+        if (size <= LINK_SIZE_GREEN) {
+            statusKey = "assessment.link_status_green";
+            statusColor = "#166534";
+            statusBg = "#ecfdf5";
+        } else if (size <= LINK_SIZE_YELLOW) {
+            statusKey = "assessment.link_status_yellow";
+            statusColor = "#7c2d12";
+            statusBg = "#fff7ed";
+        } else {
+            statusKey = "assessment.link_status_red";
+            statusColor = "#7f1d1d";
+            statusBg = "#fee2e2";
+        }
+
+        var resultEl = document.getElementById("exp-link-result");
+        if (!resultEl) return;
+        var h = '<div style="background:' + statusBg + ';border:1px solid ' + statusColor + ';border-radius:6px;padding:10px 12px;color:' + statusColor + '">';
+        h += '<div style="font-size:0.78em;font-weight:700;margin-bottom:4px">' + esc(t(statusKey)) + '</div>';
+        h += '<div style="font-size:0.72em">' + esc(t("assessment.link_size")) + ': ' + size.toLocaleString() + ' ' + esc(t("assessment.chars")) + '</div>';
+        h += '</div>';
+        // Link + copy buttons
+        h += '<div style="display:flex;gap:6px;margin-top:10px">';
+        h += '<input type="text" id="exp-link-url" readonly value="' + esc(url) + '" style="flex:1;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:ui-monospace,monospace;font-size:0.78em">';
+        h += '<button class="btn-add" style="margin:0" data-click="_copyPortalLink">' + esc(t("assessment.copy_link")) + '</button>';
+        h += '</div>';
+        h += '<button class="btn-add" style="margin-top:8px;background:var(--light-blue)" data-click="_copyEmailTemplate" data-args=\'' + _da(assessId) + '\'>' + esc(t("assessment.copy_email_template")) + '</button>';
+        h += '<p style="font-size:0.72em;color:var(--gray-dark);margin-top:10px">' + esc(t("assessment.link_password_hint")) + '</p>';
+        resultEl.innerHTML = h;
+        resultEl.style.display = "block";
+    } catch (e) {
+        console.error("Link generation failed:", e);
+        alert("Link generation failed: " + (e && e.message ? e.message : e));
+    }
+}
+window._generatePortalLink = _generatePortalLink;
+
+function _copyPortalLink() {
+    var el = document.getElementById("exp-link-url");
+    if (!el) return;
+    el.select();
+    try {
+        navigator.clipboard.writeText(el.value).then(function() {
+            showStatus(t("assessment.link_copied"));
+        });
+    } catch (e) {
+        document.execCommand("copy");
+        showStatus(t("assessment.link_copied"));
+    }
+}
+window._copyPortalLink = _copyPortalLink;
+
+function _copyEmailTemplate(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var el = document.getElementById("exp-link-url");
+    if (!el) return;
+    var link = el.value;
+    var tpl = _getAssessmentTemplate(a);
+    var vendorName = _vendorName(a.vendor_id);
+    var templateName = tpl ? tpl.name : "";
+    var dueDate = a.due_date || "-";
+    var subject = t("assessment.email_subject").replace("{vendor}", vendorName);
+    var bodyTemplate = t("assessment.email_body")
+        .replace("{template}", templateName)
+        .replace("{due_date}", dueDate);
+
+    // Plain text version (fallback): the link appears as raw URL
+    var plainBody = bodyTemplate.replace("{link}", link);
+    var plainClipboard = subject + "\n\n" + plainBody;
+
+    // HTML version: the link appears as an actual clickable hyperlink
+    // with a visible label ("Ouvrir le questionnaire"). Most email
+    // clients that accept a paste (Outlook Desktop, Gmail Web,
+    // Thunderbird, Apple Mail, New Outlook) preserve the anchor.
+    // Build order matters:
+    //   1. Replace {link} with a unique placeholder that won't appear in
+    //      the body and won't be mangled by HTML escaping.
+    //   2. Escape the entire body.
+    //   3. Wrap lines in <p> or <br>.
+    //   4. Substitute the placeholder with the real <a href="...">.
+    var PLACEHOLDER = "\u0001LINK\u0001";
+    var htmlSource = bodyTemplate.replace("{link}", PLACEHOLDER);
+    var anchor = '<a href="' + esc(link) + '">' + esc(t("assessment.email_link_label")) + '</a>';
+    var htmlBody = esc(htmlSource)
+        .split("\n")
+        .map(function(line) { return line === "" ? "<br>" : "<p style=\"margin:0 0 8px\">" + line + "</p>"; })
+        .join("")
+        .replace(PLACEHOLDER, anchor);
+    var htmlClipboard =
+        '<p style="margin:0 0 10px;font-weight:bold">' + esc(subject) + '</p>' +
+        htmlBody;
+
+    // Try the rich-text path first (two MIME types); fall back to plain.
+    try {
+        if (typeof ClipboardItem !== "undefined" && navigator.clipboard && navigator.clipboard.write) {
+            var item = new ClipboardItem({
+                "text/plain": new Blob([plainClipboard], { type: "text/plain" }),
+                "text/html":  new Blob([htmlClipboard],  { type: "text/html"  })
+            });
+            navigator.clipboard.write([item]).then(function() {
+                showStatus(t("assessment.email_template_copied"));
+            }).catch(function() {
+                // Safari / Firefox may reject ClipboardItem → fall back
+                navigator.clipboard.writeText(plainClipboard).then(function() {
+                    showStatus(t("assessment.email_template_copied"));
+                });
+            });
+            return;
+        }
+        navigator.clipboard.writeText(plainClipboard).then(function() {
+            showStatus(t("assessment.email_template_copied"));
+        });
+    } catch (e) {
+        showStatus(t("assessment.email_template_copied"));
+    }
+}
+window._copyEmailTemplate = _copyEmailTemplate;
+
+function _triggerDownload(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+}
+
+function _exportAssessmentExcel(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var tpl = _getAssessmentTemplate(a);
+    if (!tpl) return;
+    _loadExcelJS().then(function() {
+        var wb = new ExcelJS.Workbook();
+        // Sheet 1: Instructions
+        var ws1 = wb.addWorksheet(t("assessment.instructions_sheet"));
+        ws1.columns = [{ width: 100 }];
+        [
+            t("assessment.instructions_line1"),
+            "",
+            t("assessment.instructions_line2"),
+            t("assessment.instructions_line3"),
+            t("assessment.instructions_line4"),
+            t("assessment.instructions_line5"),
+            "",
+            t("assessment.instructions_line6"),
+            "",
+            t("assessment.instructions_coverage_covered"),
+            t("assessment.instructions_coverage_partial"),
+            t("assessment.instructions_coverage_not_covered"),
+            t("assessment.instructions_coverage_not_applicable"),
+            "",
+            t("assessment.instructions_id") + ": " + a.id,
+            t("assessment.instructions_vendor") + ": " + _vendorName(a.vendor_id),
+            t("assessment.instructions_template") + ": " + tpl.name + " v" + (a.template_version || 1),
+            t("assessment.instructions_due_date") + ": " + (a.due_date || "-")
+        ].forEach(function(line) { ws1.addRow([line]); });
+        ws1.getRow(1).font = { bold: true, size: 14 };
+
+        // Sheet 2: Questionnaire (simplified — only free_text questions)
+        var ws2 = wb.addWorksheet(t("assessment.questionnaire_sheet"));
+        ws2.columns = [
+            { header: "ID", key: "id", width: 10 },
+            { header: t("assessment.col_section"), key: "section", width: 22 },
+            { header: t("assessment.col_question"), key: "question", width: 50 },
+            { header: t("assessment.col_expected"), key: "expected", width: 40 },
+            { header: t("assessment.col_answer"), key: "answer", width: 40 },
+            { header: t("assessment.col_coverage"), key: "coverage", width: 16 },
+            { header: t("assessment.col_comment"), key: "comment", width: 30 },
+            { header: t("assessment.col_ap_title"), key: "ap_title", width: 30 },
+            { header: t("assessment.col_ap_desc"), key: "ap_desc", width: 30 },
+            { header: t("assessment.col_ap_date"), key: "ap_date", width: 14 },
+            { header: t("assessment.col_ap_owner"), key: "ap_owner", width: 20 },
+            { header: t("assessment.col_justification"), key: "justification", width: 30 }
+        ];
+        // Header style: dark navy background, bold white text, frozen first row
+        ws2.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
+        ws2.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+        ws2.getRow(1).alignment = { vertical: "middle" };
+        ws2.views = [{ state: "frozen", ySplit: 1 }];
+
+        // Column indices (1-based)
+        var COL_ID = 1;
+        var COL_SECTION = 2;
+        var COL_QUESTION = 3;
+        var COL_EXPECTED = 4;
+        var COL_ANSWER = 5;
+        var COL_COVERAGE = 6;
+        var COL_COMMENT = 7;
+        var COL_AP_TITLE = 8;
+        var COL_AP_DESC = 9;
+        var COL_AP_DATE = 10;
+        var COL_AP_OWNER = 11;
+        var COL_JUSTIFICATION = 12;
+
+        var COVERAGE_OPTIONS = ["covered", "partial", "not_covered", "not_applicable"];
+
+        function _setListValidation(cell, values, errorMsg) {
+            cell.dataValidation = {
+                type: "list",
+                allowBlank: true,
+                formulae: ['"' + values.join(",") + '"'],
+                showErrorMessage: true,
+                errorStyle: "warning",
+                errorTitle: "Valeur invalide",
+                error: errorMsg || "Choisissez une valeur dans la liste."
+            };
+        }
+
+        // Lock the question metadata columns (id, section, question, expected)
+        // — those are filled by the client and must not be edited by the
+        // vendor. We do not enable sheet protection (would require a
+        // password); the locked attribute simply communicates intent.
+        function _lockCell(cell) {
+            cell.protection = { locked: true };
+            cell.font = Object.assign({}, cell.font, { color: { argb: "FF1E293B" } });
+        }
+
+        (tpl.sections || []).forEach(function(section) {
+            (section.questions || []).forEach(function(q) {
+                var r = _findAssessmentResp(a, q.id) || {};
+                var firstAp = (r.action_plans && r.action_plans[0]) || {};
+                var answerStr = "";
+                if (Array.isArray(r.answer)) answerStr = r.answer.join("; ");
+                else if (r.answer && typeof r.answer === "object" && r.answer.name) answerStr = r.answer.name;
+                else if (r.answer != null) answerStr = String(r.answer);
+                var row = ws2.addRow({
+                    id: q.id,
+                    section: section.title,
+                    question: q.text,
+                    expected: q.expected || "",
+                    answer: answerStr,
+                    coverage: r.coverage || "",
+                    comment: r.comment || "",
+                    ap_title: firstAp.title || "",
+                    ap_desc: firstAp.description || "",
+                    ap_date: firstAp.target_date || "",
+                    ap_owner: firstAp.owner || "",
+                    justification: r.justification || ""
+                });
+                row.alignment = { vertical: "top", wrapText: true };
+
+                // Lock metadata columns
+                _lockCell(row.getCell(COL_ID));
+                _lockCell(row.getCell(COL_SECTION));
+                _lockCell(row.getCell(COL_QUESTION));
+                _lockCell(row.getCell(COL_EXPECTED));
+
+                // Coverage dropdown — every row gets the same list
+                _setListValidation(row.getCell(COL_COVERAGE), COVERAGE_OPTIONS);
+
+                // Date format on ap_date
+                row.getCell(COL_AP_DATE).numFmt = "yyyy-mm-dd";
+            });
+        });
+
+        // Conditional formatting: highlight ap_title and justification cells
+        // when coverage is "partial" or "not_covered" AND both fields are
+        // empty. The formula uses ISBLANK() and absolute column references on
+        // the coverage column ($F = 6th column) so each row evaluates
+        // independently.
+        var lastRow = ws2.rowCount;
+        if (lastRow > 1) {
+            var coverageColLetter = "F"; // 6th column
+            var apTitleColLetter = "H";  // 8th column
+            var justColLetter = "L";     // 12th column
+
+            // Range covering ap_title cells from row 2 to lastRow
+            var apTitleRange = apTitleColLetter + "2:" + apTitleColLetter + lastRow;
+            var justRange = justColLetter + "2:" + justColLetter + lastRow;
+
+            // Formula: TRUE when coverage ∈ {partial, not_covered} AND both
+            // ap_title (H) and justification (L) are blank on the same row.
+            // The reference uses $F2 (relative row, fixed column) so Excel
+            // re-evaluates per row.
+            var needAction = 'AND(OR($' + coverageColLetter + '2="partial",$' + coverageColLetter + '2="not_covered"),'
+                + 'TRIM($' + apTitleColLetter + '2)="",'
+                + 'TRIM($' + justColLetter + '2)="")';
+
+            ws2.addConditionalFormatting({
+                ref: apTitleRange + " " + justRange,
+                rules: [
+                    {
+                        type: "expression",
+                        formulae: [needAction],
+                        style: {
+                            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } },
+                            font: { color: { argb: "FF7F1D1D" }, bold: true },
+                            border: {
+                                left:   { style: "thin", color: { argb: "FFB91C1C" } },
+                                right:  { style: "thin", color: { argb: "FFB91C1C" } },
+                                top:    { style: "thin", color: { argb: "FFB91C1C" } },
+                                bottom: { style: "thin", color: { argb: "FFB91C1C" } }
+                            }
+                        }
+                    }
+                ]
+            });
+
+            // Bonus: also highlight the coverage cell itself in green when
+            // it is "covered" or "not_applicable" (visual confirmation).
+            ws2.addConditionalFormatting({
+                ref: coverageColLetter + "2:" + coverageColLetter + lastRow,
+                rules: [
+                    {
+                        type: "expression",
+                        formulae: ['OR($' + coverageColLetter + '2="covered",$' + coverageColLetter + '2="not_applicable")'],
+                        style: {
+                            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFD1FAE5" } },
+                            font: { color: { argb: "FF065F46" } }
+                        }
+                    },
+                    {
+                        type: "expression",
+                        formulae: ['OR($' + coverageColLetter + '2="partial",$' + coverageColLetter + '2="not_covered")'],
+                        style: {
+                            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } },
+                            font: { color: { argb: "FF92400E" } }
+                        }
+                    }
+                ]
+            });
+        }
+
+        // Sheet 3: Self validation
+        var ws3 = wb.addWorksheet(t("assessment.self_validation_sheet"));
+        ws3.columns = [{ width: 80 }];
+        ws3.addRow([t("assessment.self_validation_title")]);
+        ws3.addRow([t("assessment.self_validation_hint")]);
+        ws3.addRow([""]);
+        ws3.addRow([t("assessment.self_validation_check_label") + ": [   ]  " + t("assessment.self_validation_tick_hint")]);
+        ws3.getRow(1).font = { bold: true, size: 14 };
+
+        wb.xlsx.writeBuffer().then(function(buf) {
+            var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            var baseName = (a.id + "_" + _vendorName(a.vendor_id).replace(/\s+/g, "_") + "_questionnaire").replace(/[^a-z0-9_.-]/gi, "");
+            _triggerDownload(blob, baseName + ".xlsx");
+            showStatus(t("assessment.exported"));
+        });
+    }).catch(function(e) { alert("Excel export failed: " + e.message); });
+}
+window._exportAssessmentExcel = _exportAssessmentExcel;
+
+// ── Import ───────────────────────────────────────────────────
+function _importAssessmentResponse(vendorId) {
+    closeModal();
+    _pickAssessmentFile(null, vendorId);
+}
+window._importAssessmentResponse = _importAssessmentResponse;
+
+function _importAssessmentIntoExisting(assessId) {
+    _pickAssessmentFile(assessId, null);
+}
+window._importAssessmentIntoExisting = _importAssessmentIntoExisting;
+
+function _pickAssessmentFile(existingAssessId, vendorId) {
+    var fi = document.createElement("input");
+    fi.type = "file";
+    fi.accept = ".json,.ctenc,.xlsx";
+    fi.onchange = function() {
+        if (!fi.files[0]) return;
+        var file = fi.files[0];
+        var name = file.name.toLowerCase();
+        if (name.endsWith(".ctenc")) {
+            _promptPasswordAndDecrypt(file, function(text) {
+                _handleImportedJSON(text, existingAssessId, vendorId);
+            });
+        } else if (name.endsWith(".json")) {
+            var reader = new FileReader();
+            reader.onload = function(e) { _handleImportedJSON(e.target.result, existingAssessId, vendorId); };
+            reader.readAsText(file);
+        } else if (name.endsWith(".xlsx")) {
+            _handleImportedExcel(file, existingAssessId, vendorId);
+        } else {
+            alert(t("assessment.unsupported_format"));
+        }
+    };
+    fi.click();
+}
+
+function _promptPasswordAndDecrypt(file, onSuccess) {
+    // Use the masked-input modal (#pwd-overlay) from cisotoolbox.js
+    // instead of window.prompt(), which would show the password in plain
+    // text. Falls back to native prompt if the overlay is not present.
+    _promptPassword(t("assessment.decryption_password")).then(function(pwd) {
+        if (pwd === null || pwd === undefined) return;
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            _decryptData(e.target.result, pwd).then(onSuccess).catch(function() {
+                alert(t("assessment.decryption_failed"));
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function _handleImportedJSON(text, existingAssessId, vendorId) {
+    var payload;
+    try { payload = JSON.parse(text); }
+    catch (e) { alert(t("assessment.invalid_json")); return; }
+    if (!payload || payload.format !== "ciso_toolbox_vendor_assessment") {
+        alert(t("assessment.invalid_payload"));
+        return;
+    }
+    _applyImportedPayload(payload, existingAssessId, vendorId);
+}
+
+function _applyImportedPayload(payload, existingAssessId, vendorId) {
+    var a;
+    if (existingAssessId) {
+        a = _findAssessment(existingAssessId);
+        if (!a) { alert("Assessment not found"); return; }
+    } else {
+        // Look up by payload assessment_id first
+        a = _findAssessment(payload.assessment_id);
+        if (!a) {
+            // Create a new assessment anchored to the vendor
+            var targetVendor = vendorId || payload.vendor_id;
+            a = {
+                id: _nextAssessmentId(),
+                vendor_id: targetVendor,
+                type: "periodic",
+                date: payload.date || _today(),
+                due_date: payload.due_date || "",
+                template_id: payload.template && payload.template.id,
+                template_version: payload.template && payload.template.version,
+                template_snapshot: payload.template,
+                status: "pending_approval",
+                responses: [],
+                self_validation: true,
+                self_validated_at: payload.exported_at || new Date().toISOString(),
+                score: null,
+                completion_rate: 0
+            };
+            D.assessments.push(a);
+        }
+    }
+    // Merge responses from payload
+    a.responses = (payload.responses || []).map(function(r) { return JSON.parse(JSON.stringify(r)); });
+    a.status = "pending_approval";
+    if (!a.template_snapshot && payload.template) a.template_snapshot = payload.template;
+    _touchAssessment(a);
+    showStatus(t("assessment.imported"));
+    if (_selectedVendor !== null) _assessmentV2Returning = _selectedVendor;
+    openAssessmentV2(a.id);
+}
+
+// Extract a plain string from an ExcelJS cell value. ExcelJS can return
+// numbers, Date objects, rich text, hyperlinks, formula results, etc. —
+// this normalizes everything into a trimmed string.
+function _xlCellText(cell) {
+    if (!cell) return "";
+    var v = cell.value;
+    if (v == null) return "";
+    if (typeof v === "string") return v.trim();
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    if (v instanceof Date) return v.toISOString().split("T")[0];
+    // Rich text: { richText: [ { text: "..." }, ... ] }
+    if (v.richText) return v.richText.map(function(p) { return p.text || ""; }).join("").trim();
+    // Hyperlink: { text: "...", hyperlink: "..." }
+    if (v.text) return String(v.text).trim();
+    // Formula: { formula: "...", result: "..." }
+    if (v.result != null) return _xlCellText({ value: v.result });
+    try { return String(v).trim(); } catch (e) { return ""; }
+}
+
+function _handleImportedExcel(file, existingAssessId, vendorId) {
+    _loadExcelJS().then(function() {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var wb = new ExcelJS.Workbook();
+            wb.xlsx.load(e.target.result).then(function() {
+                // Find the questionnaire sheet — try the localized name first,
+                // then any sheet named "Questionnaire" (FR or EN), then the
+                // first sheet that has an ID column in its header.
+                var ws = wb.getWorksheet(t("assessment.questionnaire_sheet"));
+                if (!ws) ws = wb.getWorksheet("Questionnaire");
+                if (!ws) {
+                    ws = wb.worksheets.find(function(w) {
+                        if (w.rowCount < 2) return false;
+                        var first = w.getRow(1).getCell(1);
+                        return _xlCellText(first).toLowerCase() === "id";
+                    });
+                }
+                if (!ws) { alert(t("assessment.invalid_excel")); return; }
+
+                // Build a { header → columnIndex } map. ExcelJS columns are
+                // 1-based; eachCell also yields 1-based indices.
+                var headerIdx = {}; // lowercased header → col index (1-based)
+                ws.getRow(1).eachCell(function(cell, col) {
+                    var txt = _xlCellText(cell).toLowerCase();
+                    if (txt) headerIdx[txt] = col;
+                });
+
+                // Column resolver with FR / EN synonyms — the Excel template
+                // uses the localized header at export time, so we must accept
+                // both locales at import time.
+                function col(key, fallbacks) {
+                    var candidates = [key].concat(fallbacks || []);
+                    for (var i = 0; i < candidates.length; i++) {
+                        if (headerIdx[candidates[i]] != null) return headerIdx[candidates[i]];
+                    }
+                    return null;
+                }
+                // Map by internal key → Excel column index
+                var cIdx = {
+                    id:            col("id"),
+                    coverage:      col("coverage", ["couverture"]),
+                    answer:        col("answer", ["réponse", "reponse"]),
+                    comment:       col("comment", ["commentaire"]),
+                    justification: col("justification"),
+                    ap_title:      col("ap_title", ["action - intitulé", "action - intitule", "plan d'action - titre", "action plan - title", "action - title"]),
+                    ap_desc:       col("ap_desc", ["action - description", "plan d'action - description", "action plan - description"]),
+                    ap_date:       col("ap_date", ["action - date cible", "plan d'action - date cible", "action plan - target date", "action - target date"]),
+                    ap_owner:      col("ap_owner", ["action - responsable", "plan d'action - responsable", "action plan - owner", "action - owner"])
+                };
+
+                if (cIdx.id == null) { alert(t("assessment.invalid_excel")); return; }
+
+                // Build response map
+                var respByQ = {};
+                for (var r = 2; r <= ws.rowCount; r++) {
+                    var row = ws.getRow(r);
+                    var qid = _xlCellText(row.getCell(cIdx.id));
+                    if (!qid) continue;
+                    var entry = {
+                        coverage: cIdx.coverage ? _normalizeCoverage(_xlCellText(row.getCell(cIdx.coverage))) : null,
+                        answer: cIdx.answer ? _xlCellText(row.getCell(cIdx.answer)) : "",
+                        comment: cIdx.comment ? _xlCellText(row.getCell(cIdx.comment)) : "",
+                        justification: cIdx.justification ? _xlCellText(row.getCell(cIdx.justification)) : "",
+                        action_plans: []
+                    };
+                    var apTitle = cIdx.ap_title ? _xlCellText(row.getCell(cIdx.ap_title)) : "";
+                    if (apTitle) {
+                        entry.action_plans.push({
+                            id: "AP-001",
+                            title: apTitle,
+                            description: cIdx.ap_desc ? _xlCellText(row.getCell(cIdx.ap_desc)) : "",
+                            target_date: cIdx.ap_date ? _xlCellText(row.getCell(cIdx.ap_date)) : "",
+                            owner: cIdx.ap_owner ? _xlCellText(row.getCell(cIdx.ap_owner)) : "",
+                            status: "proposed"
+                        });
+                    }
+                    respByQ[qid] = entry;
+                }
+
+                // Apply to existing assessment if provided, otherwise try to
+                // match an existing one by scanning question IDs.
+                var a;
+                if (existingAssessId) a = _findAssessment(existingAssessId);
+                if (!a) {
+                    // Heuristic: find an assessment whose responses intersect
+                    // with the imported question ids. This lets the user
+                    // import "from scratch" from the vendor detail without
+                    // having opened a specific assessment first.
+                    var qIds = Object.keys(respByQ);
+                    var candidate = (D.assessments || []).find(function(x) {
+                        if (!x.template_snapshot) return false;
+                        if (vendorId && x.vendor_id !== vendorId) return false;
+                        return (x.responses || []).some(function(rr) { return qIds.indexOf(rr.question_id) >= 0; });
+                    });
+                    if (candidate) a = candidate;
+                }
+                if (!a) {
+                    alert(t("assessment.excel_need_existing"));
+                    return;
+                }
+
+                var matched = 0;
+                (a.responses || []).forEach(function(resp) {
+                    var imported = respByQ[resp.question_id];
+                    if (!imported) return;
+                    matched++;
+                    if (imported.coverage) resp.coverage = imported.coverage;
+                    if (imported.answer != null && imported.answer !== "") resp.answer = imported.answer;
+                    if (imported.comment) resp.comment = imported.comment;
+                    if (imported.justification) resp.justification = imported.justification;
+                    if (imported.action_plans && imported.action_plans.length) resp.action_plans = imported.action_plans;
+                });
+
+                if (matched === 0) {
+                    alert(t("assessment.excel_no_match"));
+                    return;
+                }
+
+                a.status = "pending_approval";
+                a.self_validation = true;
+                a.self_validated_at = new Date().toISOString();
+                _touchAssessment(a);
+                showStatus(t("assessment.imported") + " (" + matched + ")");
+                if (_selectedVendor !== null) _assessmentV2Returning = _selectedVendor;
+                openAssessmentV2(a.id);
+            }).catch(function(err) {
+                console.error("Excel import failed:", err);
+                alert(t("assessment.invalid_excel") + " — " + (err && err.message ? err.message : err));
+            });
+        };
+        reader.onerror = function() { alert(t("assessment.invalid_excel")); };
+        reader.readAsArrayBuffer(file);
+    }).catch(function(err) {
+        console.error("ExcelJS load failed:", err);
+        alert(t("assessment.invalid_excel"));
+    });
+}
+
+// ── Template Excel: download example + import ────────────────────
+function downloadTemplateExcelExample() {
+    _loadExcelJS().then(function() {
+        var wb = new ExcelJS.Workbook();
+
+        // Sheet 1 — Instructions
+        var ws1 = wb.addWorksheet(t("template.xlsx_instructions_sheet"));
+        ws1.columns = [{ width: 110 }];
+        [
+            t("template.xlsx_instructions_title"),
+            "",
+            t("template.xlsx_instructions_line1"),
+            t("template.xlsx_instructions_line2"),
+            t("template.xlsx_instructions_line3"),
+            t("template.xlsx_instructions_line4"),
+            "",
+            t("template.xlsx_instructions_cols"),
+            t("template.xlsx_instructions_col_section"),
+            t("template.xlsx_instructions_col_question"),
+            t("template.xlsx_instructions_col_expected"),
+            t("template.xlsx_instructions_col_criticality"),
+            t("template.xlsx_instructions_col_weight"),
+            "",
+            t("template.xlsx_instructions_note")
+        ].forEach(function(line) { ws1.addRow([line]); });
+        ws1.getRow(1).font = { bold: true, size: 14 };
+
+        // Sheet 2 — Questions
+        var ws2 = wb.addWorksheet(t("template.xlsx_questions_sheet"));
+        ws2.columns = [
+            { header: t("template.xlsx_col_section"), key: "section", width: 28 },
+            { header: t("template.xlsx_col_question"), key: "question", width: 60 },
+            { header: t("template.xlsx_col_expected"), key: "expected", width: 40 },
+            { header: t("template.xlsx_col_criticality"), key: "criticality", width: 16 },
+            { header: t("template.xlsx_col_weight"), key: "weight", width: 10 }
+        ];
+        ws2.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
+        ws2.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+        ws2.views = [{ state: "frozen", ySplit: 1 }];
+
+        // Example rows
+        var examples = [
+            ["Gouvernance", "Avez-vous une politique de securite de l'information documentee et approuvee par la direction ?", "Politique SSI signee, derniere revue < 12 mois", "major", 5],
+            ["Gouvernance", "Un responsable de la securite (RSSI ou equivalent) est-il designe ?", "Nom, fonction, rattachement hierarchique", "major", 5],
+            ["Gestion des acces", "Appliquez-vous le principe du moindre privilege sur les comptes utilisateurs ?", "Procedure de revue d'acces, frequence, peripherique couvert", "blocker", 8],
+            ["Gestion des acces", "L'authentification multi-facteur (MFA) est-elle activee pour les acces a privileges ?", "Liste des systemes proteges, type de MFA", "blocker", 8],
+            ["Protection des donnees", "Les donnees sensibles sont-elles chiffrees au repos et en transit ?", "Algorithmes, gestion des cles", "major", 7],
+            ["Protection des donnees", "Des sauvegardes testees regulierement sont-elles en place ?", "Frequence, retention, test de restauration", "major", 6],
+            ["Incidents", "Disposez-vous d'un plan de reponse aux incidents de securite ?", "Plan documente, exercices annuels", "major", 5],
+            ["Sous-traitance", "Evaluez-vous la securite de vos propres sous-traitants critiques ?", "Process d'evaluation, frequence", "info", 3]
+        ];
+        examples.forEach(function(row) { ws2.addRow(row); });
+
+        // Data validation on criticality column (col 4)
+        var CRITS = ["info", "major", "blocker"];
+        for (var r = 2; r <= 200; r++) {
+            ws2.getCell(r, 4).dataValidation = {
+                type: "list",
+                allowBlank: true,
+                formulae: ['"' + CRITS.join(",") + '"']
+            };
+            ws2.getCell(r, 5).dataValidation = {
+                type: "whole",
+                operator: "between",
+                allowBlank: true,
+                formulae: ["0", "100"],
+                errorTitle: t("template.xlsx_weight_error_title"),
+                error: t("template.xlsx_weight_error")
+            };
+        }
+
+        wb.xlsx.writeBuffer().then(function(buf) {
+            var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            _triggerDownload(blob, "template_questionnaire_example.xlsx");
+        });
+    }).catch(function(err) {
+        console.error("ExcelJS load failed:", err);
+        alert(t("assessment.invalid_excel"));
+    });
+}
+window.downloadTemplateExcelExample = downloadTemplateExcelExample;
+
+function importTemplateFromExcel() {
+    var input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".xlsx";
+    input.onchange = function(e) {
+        var file = e.target.files && e.target.files[0];
+        if (file) _handleImportedTemplateExcel(file);
+    };
+    input.click();
+}
+window.importTemplateFromExcel = importTemplateFromExcel;
+window._handleImportedTemplateExcel = _handleImportedTemplateExcel;
+
+function _handleImportedTemplateExcel(file) {
+    _loadExcelJS().then(function() {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var wb = new ExcelJS.Workbook();
+            wb.xlsx.load(e.target.result).then(function() {
+                // Find the questions sheet: localized name, "Questions", or first
+                // sheet with a recognizable header row.
+                var ws = wb.getWorksheet(t("template.xlsx_questions_sheet"));
+                if (!ws) ws = wb.getWorksheet("Questions");
+                if (!ws) {
+                    ws = wb.worksheets.find(function(w) {
+                        if (w.rowCount < 2) return false;
+                        var firstText = _xlCellText(w.getRow(1).getCell(1)).toLowerCase();
+                        return firstText === "section" || firstText === t("template.xlsx_col_section").toLowerCase();
+                    });
+                }
+                if (!ws) ws = wb.worksheets[0];
+                if (!ws || ws.rowCount < 2) {
+                    alert(t("template.xlsx_import_empty"));
+                    return;
+                }
+
+                // Build header → column map
+                var headerIdx = {};
+                ws.getRow(1).eachCell(function(cell, col) {
+                    var txt = _xlCellText(cell).toLowerCase().trim();
+                    if (txt) headerIdx[txt] = col;
+                });
+                function col(key, fallbacks) {
+                    var candidates = [key].concat(fallbacks || []);
+                    for (var i = 0; i < candidates.length; i++) {
+                        if (headerIdx[candidates[i]] != null) return headerIdx[candidates[i]];
+                    }
+                    return null;
+                }
+                var cIdx = {
+                    section:     col("section"),
+                    question:    col("question", ["text", "texte", "intitule", "intitulé"]),
+                    expected:    col("expected", ["reponse attendue", "réponse attendue", "preuve attendue", "attendu"]),
+                    criticality: col("criticality", ["criticite", "criticité"]),
+                    weight:      col("weight", ["poids"])
+                };
+
+                if (cIdx.section == null || cIdx.question == null) {
+                    alert(t("template.xlsx_import_missing_cols"));
+                    return;
+                }
+
+                // Build sections array preserving order
+                var sectionsByTitle = {};
+                var sectionsOrder = [];
+                var totalQ = 0;
+
+                for (var r = 2; r <= ws.rowCount; r++) {
+                    var row = ws.getRow(r);
+                    var secTitle = _xlCellText(row.getCell(cIdx.section)).trim();
+                    var qText = _xlCellText(row.getCell(cIdx.question)).trim();
+                    if (!secTitle || !qText) continue;
+
+                    if (!sectionsByTitle[secTitle]) {
+                        sectionsByTitle[secTitle] = {
+                            id: "SEC-" + String(sectionsOrder.length + 1).padStart(3, "0"),
+                            title: secTitle,
+                            description: "",
+                            questions: []
+                        };
+                        sectionsOrder.push(secTitle);
+                    }
+                    var sec = sectionsByTitle[secTitle];
+                    var crit = cIdx.criticality ? _xlCellText(row.getCell(cIdx.criticality)).toLowerCase().trim() : "";
+                    if (["info", "major", "blocker"].indexOf(crit) < 0) crit = "major";
+                    var w = cIdx.weight ? parseInt(_xlCellText(row.getCell(cIdx.weight)), 10) : 5;
+                    if (isNaN(w) || w < 1) w = 5;
+                    if (w > 100) w = 100;
+
+                    sec.questions.push({
+                        id: "Q-" + String(sec.questions.length + 1).padStart(3, "0"),
+                        type: "free_text",
+                        text: qText,
+                        description: "",
+                        expected: cIdx.expected ? _xlCellText(row.getCell(cIdx.expected)) : "",
+                        weight: w,
+                        criticality: crit,
+                        options: []
+                    });
+                    totalQ++;
+                }
+
+                if (totalQ === 0) {
+                    alert(t("template.xlsx_import_empty"));
+                    return;
+                }
+
+                var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
+                var baseName = (file.name || "").replace(/\.[^.]+$/, "") || t("template.imported_default_name");
+                var tpl = {
+                    id: _nextTemplateId(),
+                    name: baseName,
+                    description: t("template.imported_desc"),
+                    kind: "questionnaire",
+                    language: lang,
+                    version: 1,
+                    created_at: _today(),
+                    updated_at: _today(),
+                    sections: sectionsOrder.map(function(title) { return sectionsByTitle[title]; })
+                };
+                // Normalize question IDs to be globally unique within the template
+                _normalizeTemplateQuestionIds(tpl);
+
+                if (!D.questionnaire_templates) D.questionnaire_templates = [];
+                D.questionnaire_templates.push(tpl);
+                _autoSave();
+                showStatus(t("template.imported") + " (" + totalQ + ")");
+                _editingTemplateId = tpl.id;
+                renderPanel();
+            }).catch(function(err) {
+                console.error("Template Excel import failed:", err);
+                alert(t("template.xlsx_import_error") + " — " + (err && err.message ? err.message : err));
+            });
+        };
+        reader.onerror = function() { alert(t("template.xlsx_import_error")); };
+        reader.readAsArrayBuffer(file);
+    }).catch(function(err) {
+        console.error("ExcelJS load failed:", err);
+        alert(t("template.xlsx_import_error"));
+    });
+}
+
+function _normalizeCoverage(raw) {
+    if (!raw) return null;
+    var s = String(raw).toLowerCase().trim();
+    if (["covered", "couverte", "c"].indexOf(s) >= 0) return "covered";
+    if (["partial", "partielle", "partiellement", "p"].indexOf(s) >= 0) return "partial";
+    if (["not_covered", "non couverte", "non-couverte", "nc"].indexOf(s) >= 0) return "not_covered";
+    if (["not_applicable", "non applicable", "na", "n/a"].indexOf(s) >= 0) return "not_applicable";
+    return null;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL MEASURES REGISTRY
@@ -2597,435 +5461,6 @@ function _loadExcelJS() {
     });
 }
 
-function exportExcel() {
-    _loadExcelJS().then(function() {
-        showStatus(t("menu_export_excel") + "...");
-        var wb = new ExcelJS.Workbook();
-        wb.creator = "CISO Toolbox — Vendor";
-        var org = D.metadata.organization || "";
-
-        // ── Colors ──
-        var headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A5F" } };
-        var headerFont = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
-        var borderThin = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
-
-        function _applyHeaders(ws) {
-            var row = ws.getRow(1);
-            row.eachCell(function(cell) {
-                cell.fill = headerFill;
-                cell.font = headerFont;
-                cell.border = borderThin;
-                cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-            });
-            row.height = 28;
-        }
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 1: Fournisseurs
-        // ════════════════════════════════════════════════════════
-        var ws1 = wb.addWorksheet(t("nav.vendors"));
-        ws1.columns = [
-            { header: "ID", key: "id", width: 10 },
-            { header: t("vendor.name"), key: "name", width: 25 },
-            { header: t("vendor.status"), key: "status", width: 12 },
-            { header: t("vendor.sector"), key: "sector", width: 20 },
-            { header: t("vendor.country"), key: "country", width: 12 },
-            { header: t("vendor.website"), key: "website", width: 25 },
-            { header: t("vendor.contact_name"), key: "contact", width: 18 },
-            { header: t("vendor.contact_email"), key: "email", width: 22 },
-            { header: t("vendor.cls_ops_impact"), key: "ops", width: 10 },
-            { header: t("vendor.cls_processes"), key: "proc", width: 10 },
-            { header: t("vendor.cls_replace_difficulty"), key: "repl", width: 10 },
-            { header: t("vendor.cls_data_sensitivity"), key: "data", width: 10 },
-            { header: t("vendor.cls_integration"), key: "integ", width: 10 },
-            { header: t("vendor.cls_regulatory"), key: "reg", width: 10 },
-            { header: t("vendor.dependance"), key: "dep", width: 12 },
-            { header: t("vendor.penetration"), key: "pen", width: 12 },
-            { header: t("vendor.maturite"), key: "mat", width: 10 },
-            { header: t("vendor.confiance"), key: "conf", width: 10 },
-            { header: t("vendor.threat_level"), key: "menace", width: 12 },
-            { header: t("vendor.tier"), key: "tier", width: 12 },
-            { header: t("vendor.gdpr_subprocessor"), key: "gdpr", width: 10 },
-            { header: "DORA", key: "dora", width: 8 },
-            { header: t("vendor.contract_start"), key: "start", width: 14 },
-            { header: t("vendor.contract_end"), key: "end", width: 14 },
-            { header: t("vendor.review_date"), key: "review", width: 14 },
-            { header: t("vendor.notes"), key: "notes", width: 30 }
-        ];
-        D.vendors.forEach(function(v, i) {
-            var c = v.classification || {};
-            var ex = v.exposure || {};
-            var ct = v.contract || {};
-            var co = v.contact || {};
-            var row = i + 2;
-            ws1.addRow({
-                id: v.id, name: v.name, status: t("vendor.status_" + (v.status || "prospect")),
-                sector: v.sector, country: v.country, website: v.website,
-                contact: co.name, email: co.email,
-                ops: c.ops_impact || 0, proc: c.processes || 0, repl: c.replace_difficulty || 0,
-                data: c.data_sensitivity || 0, integ: c.integration || 0, reg: c.regulatory_impact || 0,
-                dep: null, pen: null, mat: ex.maturite || 0, conf: ex.confiance || 0,
-                menace: null, tier: null,
-                gdpr: c.gdpr_subprocessor ? t("common.yes") || "Oui" : "",
-                dora: _isDoraICTCritical(c) ? "Oui" : "",
-                start: ct.start_date, end: ct.end_date, review: ct.review_date,
-                notes: v.notes
-            });
-            // Formulas: Dep = AVG(ops, proc, repl), Pen = AVG(data, integ, reg)
-            var depCol = "O", penCol = "P", matCol = "Q", confCol = "R", menaceCol = "S", tierCol = "T";
-            ws1.getCell(depCol + row).value = { formula: "ROUND(AVERAGE(I" + row + ",J" + row + ",K" + row + ")*10,0)/10" };
-            ws1.getCell(penCol + row).value = { formula: "ROUND(AVERAGE(L" + row + ",M" + row + ",N" + row + ")*10,0)/10" };
-            ws1.getCell(menaceCol + row).value = { formula: "IF(AND(" + matCol + row + ">0," + confCol + row + ">0),ROUND((" + depCol + row + "*" + penCol + row + ")/(" + matCol + row + "*" + confCol + row + ")*100,0)/100,0)" };
-            ws1.getCell(tierCol + row).value = { formula: 'IF(' + menaceCol + row + '>=4,"' + t("vendor.exposure_critical") + '",IF(' + menaceCol + row + '>=2,"' + t("vendor.exposure_high") + '",IF(' + menaceCol + row + '>=1,"' + t("vendor.exposure_moderate") + '","' + t("vendor.exposure_low") + '")))' };
-        });
-        _applyHeaders(ws1);
-        ws1.autoFilter = { from: "A1", to: "Z" + (D.vendors.length + 1) };
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 2: Risques
-        // ════════════════════════════════════════════════════════
-        var ws2 = wb.addWorksheet(t("nav.risks"));
-        ws2.columns = [
-            { header: "ID", key: "id", width: 14 },
-            { header: t("risk.vendor"), key: "vendor", width: 20 },
-            { header: t("risk.risk_title"), key: "title", width: 30 },
-            { header: t("risk.category"), key: "cat", width: 12 },
-            { header: t("risk.impact"), key: "impact", width: 8 },
-            { header: t("risk.likelihood"), key: "likelihood", width: 12 },
-            { header: t("risk.inherent_score"), key: "score", width: 12 },
-            { header: t("risk.treatment"), key: "treatment", width: 12 },
-            { header: t("risk.residual_impact"), key: "resi", width: 10 },
-            { header: t("risk.residual_likelihood"), key: "resl", width: 12 },
-            { header: t("risk.residual_score"), key: "resscore", width: 12 },
-            { header: t("risk.status"), key: "status", width: 12 },
-            { header: t("risk.description"), key: "desc", width: 40 }
-        ];
-        D.risks.forEach(function(r, i) {
-            var row = i + 2;
-            ws2.addRow({
-                id: r.id, vendor: _vendorName(r.vendor_id), title: r.title,
-                cat: r.category, impact: r.impact, likelihood: r.likelihood,
-                score: null, treatment: r.treatment ? t("risk.treatment_" + r.treatment.response) : "",
-                resi: r.residual_impact || "", resl: r.residual_likelihood || "",
-                resscore: null, status: t("risk.status_" + (r.status || "active")),
-                desc: r.description
-            });
-            // Formulas: inherent = I*L, residual = rI*rL
-            ws2.getCell("G" + row).value = { formula: "E" + row + "*F" + row };
-            ws2.getCell("K" + row).value = { formula: 'IF(AND(I' + row + '<>"",J' + row + '<>""),I' + row + "*J" + row + ',"")'};
-            // Color inherent score
-            ws2.getCell("G" + row).fill = null;
-        });
-        _applyHeaders(ws2);
-        ws2.autoFilter = { from: "A1", to: "M" + (D.risks.length + 1) };
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 3: Mesures
-        // ════════════════════════════════════════════════════════
-        var ws3 = wb.addWorksheet(t("nav.measures"));
-        ws3.columns = [
-            { header: "ID", key: "id", width: 14 },
-            { header: t("risk.vendor"), key: "vendor", width: 20 },
-            { header: t("measure.col_mesure"), key: "mesure", width: 35 },
-            { header: t("measure.col_type"), key: "type", width: 16 },
-            { header: t("measure.col_statut"), key: "statut", width: 12 },
-            { header: t("measure.col_responsable"), key: "resp", width: 18 },
-            { header: t("measure.col_echeance"), key: "echeance", width: 14 },
-            { header: t("measure.ref_socle"), key: "ref", width: 20 },
-            { header: t("measure.details"), key: "details", width: 40 },
-            { header: t("measure.effet"), key: "effet", width: 30 }
-        ];
-        D.vendors.forEach(function(v) {
-            (v.measures || []).forEach(function(m) {
-                ws3.addRow({
-                    id: m.id, vendor: v.name, mesure: m.mesure,
-                    type: m.type, statut: t("measure." + (m.statut || "planifie")),
-                    resp: m.responsable, echeance: m.echeance,
-                    ref: m.ref_socle, details: m.details, effet: m.effet
-                });
-            });
-        });
-        _applyHeaders(ws3);
-        ws3.autoFilter = { from: "A1", to: "J" + (ws3.rowCount) };
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 4: Evaluations
-        // ════════════════════════════════════════════════════════
-        var ws4 = wb.addWorksheet(t("nav.assessments"));
-        ws4.columns = [
-            { header: "ID", key: "id", width: 12 },
-            { header: t("risk.vendor"), key: "vendor", width: 20 },
-            { header: t("assessment.type"), key: "type", width: 14 },
-            { header: t("assessment.date"), key: "date", width: 14 },
-            { header: t("assessment.status"), key: "status", width: 14 },
-            { header: t("assessment.score"), key: "score", width: 10 },
-            { header: t("assessment.completion"), key: "completion", width: 12 }
-        ];
-        D.assessments.forEach(function(a) {
-            ws4.addRow({
-                id: a.id, vendor: _vendorName(a.vendor_id),
-                type: t("assessment.type_" + (a.type || "periodic")),
-                date: a.date, status: t("assessment.status_" + (a.status || "draft")),
-                score: a.score != null ? a.score + "%" : "", completion: (a.completion_rate || 0) + "%"
-            });
-        });
-        _applyHeaders(ws4);
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 5: Documents
-        // ════════════════════════════════════════════════════════
-        var ws5 = wb.addWorksheet(t("nav.documents"));
-        ws5.columns = [
-            { header: "ID", key: "id", width: 10 },
-            { header: t("risk.vendor"), key: "vendor", width: 20 },
-            { header: t("doc.name"), key: "name", width: 30 },
-            { header: t("doc.type"), key: "type", width: 16 },
-            { header: "URL", key: "url", width: 35 },
-            { header: t("doc.expiry"), key: "expiry", width: 14 },
-            { header: t("doc.status"), key: "status", width: 12 }
-        ];
-        D.documents.forEach(function(d, i) {
-            var row = i + 2;
-            var statusLabel = "";
-            if (d.expiry_date) {
-                var exp = new Date(d.expiry_date), now = new Date();
-                statusLabel = exp < now ? t("doc.status_expired") : exp < new Date(now.getTime() + 30 * 86400000) ? t("doc.status_expiring") : t("doc.status_valid");
-            }
-            ws5.addRow({
-                id: d.id, vendor: _vendorName(d.vendor_id), name: d.name,
-                type: _docTypeLabel(d.type), url: d.url, expiry: d.expiry_date, status: statusLabel
-            });
-        });
-        _applyHeaders(ws5);
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 6: Tableau de bord (formulas)
-        // ════════════════════════════════════════════════════════
-        var ws6 = wb.addWorksheet(t("nav.dashboard"));
-        ws6.getColumn(1).width = 30;
-        ws6.getColumn(2).width = 15;
-        var kpis = [
-            [t("dashboard.total_vendors"), { formula: "COUNTA(" + t("nav.vendors") + "!A2:A1000)" }],
-            [t("dashboard.critical_vendors"), { formula: 'COUNTIF(' + t("nav.vendors") + '!T2:T1000,"' + t("vendor.exposure_critical") + '")' }],
-            [t("dashboard.open_risks"), { formula: 'COUNTIFS(' + t("nav.risks") + '!L2:L1000,"<>"&"' + t("risk.status_closed") + '",' + t("nav.risks") + '!L2:L1000,"<>")' }],
-            [t("dashboard.pending_assessments"), { formula: 'COUNTIFS(' + t("nav.assessments") + '!E2:E1000,"<>"&"' + t("assessment.status_completed") + '",' + t("nav.assessments") + '!E2:E1000,"<>")' }],
-            ["", ""],
-            [t("risk.category") + " CYBER", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"CYBER")' }],
-            [t("risk.category") + " OPS", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"OPS")' }],
-            [t("risk.category") + " COMP", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"COMP")' }],
-            [t("risk.category") + " FIN", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"FIN")' }],
-            [t("risk.category") + " STRAT", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"STRAT")' }],
-            ["", ""],
-            [t("measure.planifie"), { formula: 'COUNTIF(' + t("nav.measures") + '!E2:E1000,"' + t("measure.planifie") + '")' }],
-            [t("measure.en_cours"), { formula: 'COUNTIF(' + t("nav.measures") + '!E2:E1000,"' + t("measure.en_cours") + '")' }],
-            [t("measure.termine"), { formula: 'COUNTIF(' + t("nav.measures") + '!E2:E1000,"' + t("measure.termine") + '")' }]
-        ];
-        kpis.forEach(function(kpi, i) {
-            var row = ws6.getRow(i + 1);
-            row.getCell(1).value = kpi[0];
-            row.getCell(1).font = { bold: true, size: 10 };
-            row.getCell(2).value = kpi[1];
-            row.getCell(2).font = { size: 11 };
-            row.getCell(2).alignment = { horizontal: "center" };
-        });
-
-        // ── Download ──
-        wb.xlsx.writeBuffer().then(function(buf) {
-            var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-            var a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = "TPRM_" + (org || "export").replace(/\s/g, "_") + ".xlsx";
-            a.click();
-            URL.revokeObjectURL(a.href);
-            showStatus(t("menu_export_excel") + " ✓");
-        });
-    }).catch(function(e) {
-        alert("Excel export error: " + e.message);
-    });
-}
-window.exportExcel = exportExcel;
-
-function exportPP() {
-    var pp = D.vendors.map(function(v) {
-        var ex = v.exposure || {};
-        return {
-            id: v.id, nom: v.name, type: v.sector || "Prestataire",
-            dependance: Math.round(ex.dependance || 0),
-            penetration: Math.round(ex.penetration || 0),
-            maturite: Math.round(ex.maturite || 0),
-            confiance: Math.round(ex.confiance || 0),
-            measures: (v.measures || []).map(function(m) {
-                return { mesure: m.mesure || "", details: m.details || "", type: m.type || "", statut: m.statut || "", responsable: m.responsable || "", echeance: m.echeance || "" };
-            })
-        };
-    });
-    var data = JSON.stringify({ pp_export: pp, source: "CISO Toolbox — Vendor TPRM" }, null, 2);
-    var blob = new Blob([data], { type: "application/json" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url; a.download = "tprm_pp_export.json"; a.click();
-    URL.revokeObjectURL(url);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// IMPORT FROM RISK (EBIOS RM)
-// ═══════════════════════════════════════════════════════════════
-
-function triggerImportRisk() {
-    document.getElementById("risk-import-input").click();
-}
-window.triggerImportRisk = triggerImportRisk;
-
-function importRiskFile(event) {
-    var file = event.target.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            var data = JSON.parse(e.target.result);
-            // Support pp_export format or full EBIOS RM file
-            var ppList = data.pp_export || data.pp || [];
-            if (!ppList.length) { showStatus(t("vendor.import_risk.no_pp")); return; }
-            // Build measure lookup from Risk data: measures indexed by ID
-            var riskMeasures = {};
-            (data.measures || []).forEach(function(m) { riskMeasures[m.id] = m; });
-            // Build eco lookup: PP ID → list of measure IDs (existing + complementary)
-            var ecoMeasures = {};
-            (data.eco || []).forEach(function(ec) {
-                var ppId = (ec.pp_id || "").split(" - ")[0].trim();
-                if (!ppId) return;
-                var mIds = [];
-                [ec.mesures_existantes, ec.mesures_complementaires].forEach(function(str) {
-                    if (!str) return;
-                    str.split(",").forEach(function(ref) {
-                        var mId = ref.trim().split(" - ")[0].trim();
-                        if (mId && riskMeasures[mId]) mIds.push(mId);
-                    });
-                });
-                ecoMeasures[ppId] = mIds;
-            });
-
-            _saveState();
-            var addedV = 0, addedR = 0, addedM = 0, skipped = 0;
-
-            ppList.forEach(function(pp) {
-                var nom = pp.nom || pp.name || "";
-                var dep = pp.dependance || 0;
-                var pen = pp.penetration || 0;
-                var mat = pp.maturite || 0;
-                var conf = pp.confiance || 0;
-
-                // Find existing vendor or create new one
-                var existing = D.vendors.find(function(v) { return v.name === nom; });
-                var vendor, vid;
-                if (existing) {
-                    vendor = existing;
-                    vid = existing.id;
-                } else {
-                    vid = "PP-" + String(D.vendors.length + 1).padStart(3, "0");
-                    vendor = {
-                        id: vid, name: nom, legal_entity: "", country: "", sector: pp.type || pp.categorie || "Prestataire",
-                        website: "", siret: "", status: "active",
-                        contact: { name: "", email: "" },
-                        internal_contact: { name: "", email: "" },
-                        contract: { start_date: "", end_date: "", review_date: "" },
-                        classification: {
-                            ops_impact: Math.round(dep), processes: Math.round(dep), replace_difficulty: Math.round(dep),
-                            data_sensitivity: Math.round(pen), integration: Math.round(pen), regulatory_impact: Math.round(pen)
-                        },
-                        exposure: { dependance: dep, penetration: pen, maturite: mat, confiance: conf },
-                        certifications: [], dpa_signed: false, sub_contractors: [], measures: [], notes: ""
-                    };
-                    D.vendors.push(vendor);
-                    addedV++;
-                }
-                if (!vendor.measures) vendor.measures = [];
-
-                // Import measures from pp_export format AND eco table
-                var mIds = ecoMeasures[pp.id] || [];
-                var ppMeasures = pp.measures || [];
-                var vendorMeasureRefs = [];
-                var latestDue = "";
-
-                ppMeasures.forEach(function(m) {
-                    var mid = vid + "-M" + String(addedM + 1).padStart(2, "0");
-                    vendor.measures.push({
-                        id: mid, mesure: m.mesure || "", details: m.details || "", type: m.type || "",
-                        statut: m.statut || "a_lancer", responsable: m.responsable || "", echeance: m.echeance || ""
-                    });
-                    vendorMeasureRefs.push(mid + " - " + (m.mesure || "").substring(0, 40));
-                    if (m.echeance && m.echeance > latestDue) latestDue = m.echeance;
-                    addedM++;
-                });
-                mIds.forEach(function(mId) {
-                    var m = riskMeasures[mId];
-                    if (!m) return;
-                    var mid = vid + "-M" + String(addedM + 1).padStart(2, "0");
-                    vendor.measures.push({
-                        id: mid, mesure: m.mesure || "", details: m.details || "", type: m.type || "",
-                        statut: m.statut === "Terminé" ? "termine" : m.statut === "En cours" ? "en_cours" : "a_lancer",
-                        responsable: m.responsable || "", echeance: m.echeance || ""
-                    });
-                    vendorMeasureRefs.push(mid + " - " + (m.mesure || "").substring(0, 40));
-                    if (m.echeance && m.echeance > latestDue) latestDue = m.echeance;
-                    addedM++;
-                });
-
-                // Create a global EBIOS risk for this vendor with linked measures
-                var menace = (mat && conf) ? Math.round((dep * pen) / (mat * conf) * 100) / 100 : 0;
-                var impact = Math.min(Math.max(Math.round(dep), 1), 5);
-                var likelihood = Math.min(Math.max(Math.round(menace), 1), 5);
-                var rid = vid + "-R01";
-                D.risks.push({
-                    id: rid, vendor_id: vid,
-                    title: t("vendor.import_risk.risk_title", {name: nom}),
-                    description: t("vendor.import_risk.risk_desc", {name: nom, dep: dep, pen: pen, mat: mat, conf: conf, menace: menace}),
-                    category: "CYBER", impact: impact, likelihood: likelihood,
-                    treatment: { response: vendorMeasureRefs.length ? "mitigate" : "accept", details: "", due_date: latestDue },
-                    residual_impact: 0, residual_likelihood: 0, status: "active",
-                    linked_measures: vendorMeasureRefs.join(", ")
-                });
-                addedR++;
-            });
-
-            _autoSave();
-            renderPanel();
-            showStatus(t("vendor.import_risk.success", {vendors: addedV, risks: addedR, measures: addedM, skipped: skipped}));
-        } catch(err) {
-            showStatus(t("vendor.import_risk.error", {msg: err.message}));
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = "";
-}
-window.importRiskFile = importRiskFile;
-
-// ═══════════════════════════════════════════════════════════════
-// FILE MENU (save/load)
-// ═══════════════════════════════════════════════════════════════
-
-window.exportPP = exportPP;
-
-// saveJSON and openFile are provided by cisotoolbox.js (with AES-256 encryption)
-
-function _importPP(ppList) {
-    ppList.forEach(function(pp) {
-        var exists = D.vendors.find(function(v) { return v.id === pp.id; });
-        if (!exists) {
-            D.vendors.push({
-                id: pp.id, name: pp.nom, sector: pp.type || "", status: "active",
-                classification: { gdpr_subprocessor: false },
-                exposure: {
-                    dependance: pp.dependance || 0, penetration: pp.penetration || 0,
-                    maturite: pp.maturite || 0, confiance: pp.confiance || 0
-                },
-                contact: {}, internal_contact: {}, contract: {}, certifications: [],
-                measures: [],
-                notes: "Importe depuis EBIOS RM\nDependance: " + (pp.dependance || "-") + " | Penetration: " + (pp.penetration || "-") + " | Maturite: " + (pp.maturite || "-") + " | Confiance: " + (pp.confiance || "-")
-            });
-        }
-    });
-}
 
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
@@ -3246,13 +5681,6 @@ function _saveDoraSettings() {
 // _autoSave, _loadAutoSave, newAnalysis provided by cisotoolbox.js
 
 function _initDataAndRender(cb) {
-    // Handle PP import (file opened via openFile but contains pp_export)
-    if (D && D.pp_export && !D.vendors) {
-        var backup = D.pp_export;
-        D = JSON.parse(JSON.stringify(TPRM_INIT_DATA));
-        _loadAutoSave();
-        _importPP(backup);
-    }
     _panel = "dashboard";
     _selectedVendor = null;
     renderAll();
@@ -3355,9 +5783,8 @@ function _importCustomQuestionnaire(csvText) {
 
     if (questions.length === 0) { showStatus(t("settings.custom_questionnaire_error")); return; }
 
-    _saveState();
     D._custom_questionnaire = questions;
-    _autoSave();
+    _autoSave(); // _autoSave hook handles the undo-stack push
     if (typeof openSettings === "function") openSettings();
     showStatus(t("settings.custom_questionnaire_imported", {count: questions.length}));
 }
@@ -3747,57 +6174,31 @@ function _applyAiData(v, data) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// IMPORT PP FROM EBIOS RM
-// ═══════════════════════════════════════════════════════════════
-
-function importPPFromRisk() {
-    var fi = document.createElement("input");
-    fi.type = "file"; fi.accept = ".json";
-    fi.onchange = function() {
-        if (!fi.files[0]) return;
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                var data = JSON.parse(e.target.result);
-                var imported = 0;
-                // Support both pp_export format and full EBIOS RM data
-                var ppList = data.pp_export || data.pp || [];
-                // Also look for PP in EBIOS RM full format (atelier 3)
-                if (!ppList.length && data.srov) {
-                    // Extract unique PP from scenarios
-                }
-                if (!ppList.length && data.parties_prenantes) {
-                    ppList = data.parties_prenantes;
-                }
-                ppList.forEach(function(pp) {
-                    var exists = D.vendors.find(function(v) { return v.id === pp.id || v.name === pp.nom; });
-                    if (exists) return;
-                    D.vendors.push({
-                        id: pp.id || "PP-" + String(D.vendors.length + 1).padStart(3, "0"),
-                        name: pp.nom || pp.name || "",
-                        sector: pp.type || "",
-                        status: "active",
-                        classification: { gdpr_subprocessor: false },
-                        exposure: {
-                            dependance: pp.dependance || 0, penetration: pp.penetration || 0,
-                            maturite: pp.maturite || 0, confiance: pp.confiance || 0
-                        },
-                        contact: {}, internal_contact: {}, contract: {}, certifications: [], measures: [],
-                        notes: "Importe depuis EBIOS RM\nDependance: " + (pp.dependance || "-") + " | Penetration: " + (pp.penetration || "-") + " | Maturite: " + (pp.maturite || "-") + " | Confiance: " + (pp.confiance || "-")
-                    });
-                    imported++;
-                });
-                _autoSave();
-                showStatus(t("pp.imported", { count: imported }));
-                selectPanel("vendors");
-            } catch (err) { alert("Invalid JSON: " + err.message); }
-        };
-        reader.readAsText(fi.files[0]);
-    };
-    fi.click();
+// Snapshots panel — delegates to shared _renderSnapshotsPanel() in
+// cisotoolbox_local.js. This function name is preserved because
+// cisotoolbox_local.js calls renderHistory() on window after each
+// snapshot CRUD operation.
+function renderHistory() {
+    _renderSnapshotsPanel({
+        target: "history-content",
+        orgField: "societe",
+        keys: {
+            create: "tprm.history.create",
+            encrypt: "tprm.history.encrypt",
+            decrypt: "tprm.history.decrypt",
+            encryption_active: "tprm.history.encryption_active",
+            none: "tprm.history.none",
+            col_name: "tprm.history.col_name",
+            col_date: "tprm.history.col_date",
+            col_org: "tprm.history.col_org",
+            col_actions: "tprm.history.col_actions",
+            restore: "tprm.history.restore",
+            export: "tprm.history.export",
+            hint: "tprm.history.hint"
+        }
+    });
 }
-window.importPPFromRisk = importPPFromRisk;
+window.renderHistory = renderHistory;
 
 // ═══════════════════════════════════════════════════════════════
 // HELP
@@ -3808,11 +6209,17 @@ window.importPPFromRisk = importPPFromRisk;
 // INIT
 // ═══════════════════════════════════════════════════════════════
 
+// Install the shared undo hook: every _autoSave() pushes the previous
+// state onto _undoStack so undo/redo work without manual _saveState()
+// calls. Provided by shared/js/cisotoolbox_local.js.
+if (typeof _installUndoHook === "function") _installUndoHook();
+
 function renderAll() {
     var tr = document.getElementById("toolbar-right");
     if (tr) tr.innerHTML = _getSettingsButtonHTML();
     _applyStaticTranslations();
     renderPanel();
+    if (typeof _updateUndoButtons === "function") _updateUndoButtons();
 }
 
 // Init: if catalog is present, defer to _appInitCallback; otherwise render directly
