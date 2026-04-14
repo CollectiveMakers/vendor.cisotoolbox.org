@@ -9,7 +9,20 @@
  */
 
 // CT_CONFIG — cisotoolbox framework integration
-var TPRM_INIT_DATA = { vendors: [], risks: [], assessments: [], documents: [], questionnaire_templates: [], metadata: { organization: "", created: "" } };
+var TPRM_INIT_DATA = {
+    vendors: [],
+    risks: [],
+    assessments: [],
+    documents: [],
+    questionnaire_templates: [],
+    maturity_config: {
+        weight_by_kind: { questionnaire: 1.0, audit: 1.5 },
+        weight_by_template: {},
+        decay_per_quarter: 0.0,
+        min_effective_weight: 0.1
+    },
+    metadata: { organization: "", created: "" }
+};
 window.CT_CONFIG = {
     autosaveKey: "tprm_autosave",
     initDataVar: "TPRM_INIT_DATA",
@@ -1592,6 +1605,10 @@ function _renderVendorAssessments(v) {
     h += '<strong>' + t("assessment.title") + ' (' + assessments.length + ')</strong>';
     h += '<button class="btn-add" data-click="newAssessment" data-args=\'' + _da(v.id) + '\'>' + t("assessment.new") + '</button>';
     h += '</div>';
+
+    // Weighted maturity detail (only when at least one validated assessment exists)
+    h += _renderVendorMaturityDetail(v);
+
     if (!assessments.length) return h + '<div style="color:var(--text-muted);font-size:0.85em">' + t("assessment.empty") + '</div>';
     assessments.forEach(function(a) {
         var comp = a.completion_rate != null ? a.completion_rate : 0;
@@ -2016,7 +2033,11 @@ function setAnswer(assessId, questionId, answer) {
     // Update vendor's cyber maturity from score
     if (v && a.score != null) {
         if (!v.exposure) v.exposure = {};
-        v.exposure.maturite = _scoreToMaturite(a.score);
+        // Only apply the single-assessment maturity if no validated V2
+        // assessment is available (which would otherwise take priority).
+        var hasValidated = (D.assessments || []).some(function(x) { return x.vendor_id === v.id && x.status === "validated"; });
+        if (!hasValidated) v.exposure.maturite = _scoreToMaturite(a.score);
+        else _refreshVendorMaturity(v.id);
     }
     _autoSave();
     _refreshThreatDisplay();
@@ -2040,8 +2061,9 @@ function saveAssessment(assessId) {
     // Update vendor's cyber maturity from latest assessment score
     if (v && a.score != null) {
         if (!v.exposure) v.exposure = {};
-        // Convert score (0-100%) to maturity (0-4): 0-20%=0, 21-40%=1, 41-60%=2, 61-80%=3, 81-100%=4
-        v.exposure.maturite = _scoreToMaturite(a.score);
+        var hasValidated = (D.assessments || []).some(function(x) { return x.vendor_id === v.id && x.status === "validated"; });
+        if (!hasValidated) v.exposure.maturite = _scoreToMaturite(a.score);
+        else _refreshVendorMaturity(v.id);
     }
 
     _autoSave();
@@ -2572,6 +2594,16 @@ function _ensureDefaultTemplate() {
         if (_normalizeTemplateQuestionIds(tpl)) healed = true;
         if (!tpl.kind) { tpl.kind = "questionnaire"; healed = true; }
     });
+    // Heal maturity_config on projects created before phase 0 / step 4
+    if (!D.maturity_config) {
+        D.maturity_config = {
+            weight_by_kind: { questionnaire: 1.0, audit: 1.5 },
+            weight_by_template: {},
+            decay_per_quarter: 0.0,
+            min_effective_weight: 0.1
+        };
+        healed = true;
+    }
     if (healed) _autoSave();
 
     var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
@@ -3920,12 +3952,8 @@ function _approveAssessment(assessId) {
     a.approved_at = new Date().toISOString();
     // Create vendor action plan items from approved responses
     _materializeActionPlans(a);
-    // Update vendor's maturity score
-    var v = D.vendors.find(function(x) { return x.id === a.vendor_id; });
-    if (v && a.score != null) {
-        if (!v.exposure) v.exposure = {};
-        v.exposure.maturite = _scoreToMaturite(a.score);
-    }
+    // Update vendor's maturity from the weighted aggregate of all validated assessments
+    _refreshVendorMaturity(a.vendor_id);
     _autoSave();
     openAssessmentV2(assessId);
     showStatus(t("assessment.approved"));
@@ -3998,6 +4026,243 @@ function _computeAssessmentV2Score(a) {
         // not_covered or null → 0
     });
     return max > 0 ? Math.round((total / max) * 100) : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WEIGHTED MATURITY SCORE (vendor-level aggregation)
+// ═══════════════════════════════════════════════════════════════
+//
+// Instead of reflecting only the last validated assessment, the vendor's
+// maturity score is now a weighted average of every validated assessment
+// attached to that vendor. Each assessment contributes according to:
+//
+//   - a base weight derived from:
+//       * weight_override (per-assessment manual value) if set,
+//       * otherwise weight_by_template[template_id] if set,
+//       * otherwise weight_by_kind[kind] (defaults 1.0 questionnaire,
+//         1.5 audit),
+//       * otherwise 1.0
+//   - a temporal decay, if maturity_config.decay_per_quarter > 0:
+//         effective = base * (1 - decay * quartersAgo),
+//         floored at maturity_config.min_effective_weight
+//   - excluded assessments (a.excluded === true) are skipped entirely.
+//
+// Legacy assessments (no template_id) are treated as kind = "questionnaire"
+// so they keep contributing to the score even after migration.
+// ═══════════════════════════════════════════════════════════════
+
+function _maturityConfig() {
+    var cfg = D.maturity_config || {};
+    return {
+        weight_by_kind: cfg.weight_by_kind || { questionnaire: 1.0, audit: 1.5 },
+        weight_by_template: cfg.weight_by_template || {},
+        decay_per_quarter: typeof cfg.decay_per_quarter === "number" ? cfg.decay_per_quarter : 0.0,
+        min_effective_weight: typeof cfg.min_effective_weight === "number" ? cfg.min_effective_weight : 0.1
+    };
+}
+
+function _quartersBetween(dateStr, now) {
+    if (!dateStr) return 0;
+    var d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 0;
+    var ref = now || new Date();
+    var months = (ref.getFullYear() - d.getFullYear()) * 12 + (ref.getMonth() - d.getMonth());
+    return Math.max(0, Math.floor(months / 3));
+}
+
+// Returns the detail of the weighted maturity score for a vendor.
+// Shape:
+//   { score: 0..100, rows: [
+//       { assessment, base, decay, effective, excluded, contribution }
+//     ], sum_weights, sum_weighted }
+function _computeVendorMaturityDetail(vendorId) {
+    var cfg = _maturityConfig();
+    var all = (D.assessments || []).filter(function(a) {
+        return a.vendor_id === vendorId && a.status === "validated";
+    });
+    var now = new Date();
+    var rows = [];
+    var sumW = 0, sumS = 0;
+
+    all.forEach(function(a) {
+        var tpl = _getAssessmentTemplate(a);
+        var kind = (tpl && tpl.kind) || "questionnaire";
+        var base;
+        if (typeof a.weight_override === "number") {
+            base = a.weight_override;
+        } else if (tpl && cfg.weight_by_template[tpl.id] != null) {
+            base = cfg.weight_by_template[tpl.id];
+        } else {
+            base = cfg.weight_by_kind[kind] != null ? cfg.weight_by_kind[kind] : 1.0;
+        }
+        var quarters = _quartersBetween(a.approved_at || a.submitted_at || a.date, now);
+        var decayMult = 1 - (cfg.decay_per_quarter || 0) * quarters;
+        if (decayMult < 0) decayMult = 0;
+        var effective = Math.max(cfg.min_effective_weight, base * decayMult);
+        var score = typeof a.score === "number" ? a.score : 0;
+        var row = {
+            assessment: a,
+            kind: kind,
+            base: base,
+            quarters: quarters,
+            decay_mult: decayMult,
+            effective: a.excluded ? 0 : effective,
+            excluded: !!a.excluded,
+            score: score,
+            contribution: a.excluded ? 0 : score * effective
+        };
+        rows.push(row);
+        if (!a.excluded) {
+            sumW += effective;
+            sumS += score * effective;
+        }
+    });
+
+    var finalScore = sumW > 0 ? Math.round(sumS / sumW) : 0;
+    return { score: finalScore, rows: rows, sum_weights: sumW, sum_weighted: sumS };
+}
+
+function _maturityRowTemplateName(row) {
+    var a = row.assessment;
+    if (a.template_snapshot) return a.template_snapshot.name || "";
+    if (a.template_id) {
+        var tpl = (D.questionnaire_templates || []).find(function(tp) { return tp.id === a.template_id; });
+        if (tpl) return tpl.name;
+    }
+    return t("assessment.type_" + (a.type || "periodic"));
+}
+
+// Render the weighted maturity detail panel (collapsed by default on vendor detail)
+function _renderVendorMaturityDetail(v) {
+    var detail = _computeVendorMaturityDetail(v.id);
+    if (!detail.rows.length) return "";
+    var cfg = _maturityConfig();
+    var h = '<details class="maturity-detail" style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg)">';
+    h += '<summary style="padding:10px 14px;cursor:pointer;font-weight:600;font-size:0.9em;list-style:none;display:flex;align-items:center;gap:10px">';
+    h += '<span>' + esc(t("maturity.detail_title")) + '</span>';
+    h += '<span style="flex:1"></span>';
+    h += '<span style="font-size:0.82em;color:var(--gray-dark);font-weight:400">' + detail.rows.length + ' ' + esc(t("maturity.validated_count")) + '</span>';
+    h += '<span class="score-val ' + _scoreColorClass(detail.score) + '" style="font-size:1.4em">' + detail.score + '%</span>';
+    h += '</summary>';
+    h += '<div style="padding:0 14px 14px">';
+    h += '<p style="font-size:0.82em;color:var(--gray-dark);margin:0 0 10px">' + esc(t("maturity.detail_intro")) + '</p>';
+
+    // Global config block
+    h += '<div style="padding:10px 12px;background:var(--bg);border-radius:6px;margin-bottom:12px">';
+    h += '<div style="font-size:0.75em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:8px">' + esc(t("maturity.global_config")) + '</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">';
+    h += '<div><label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("maturity.weight_questionnaire")) + '</label>';
+    h += '<input type="number" step="0.1" min="0" value="' + (cfg.weight_by_kind.questionnaire || 1) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px" data-input="_updateMaturityConfig" data-args=\'["weight_by_kind.questionnaire"]\' data-pass-value></div>';
+    h += '<div><label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("maturity.weight_audit")) + '</label>';
+    h += '<input type="number" step="0.1" min="0" value="' + (cfg.weight_by_kind.audit || 1.5) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px" data-input="_updateMaturityConfig" data-args=\'["weight_by_kind.audit"]\' data-pass-value></div>';
+    h += '<div><label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("maturity.decay_per_quarter")) + '</label>';
+    h += '<input type="number" step="0.05" min="0" max="1" value="' + (cfg.decay_per_quarter || 0) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px" data-input="_updateMaturityConfig" data-args=\'["decay_per_quarter"]\' data-pass-value></div>';
+    h += '</div>';
+    h += '</div>';
+
+    // Table of contributing assessments
+    h += '<table style="width:100%;font-size:0.82em;border-collapse:collapse">';
+    h += '<thead><tr style="background:var(--bg);color:var(--gray-dark);text-transform:uppercase;font-size:0.72em">';
+    h += '<th style="text-align:left;padding:6px 8px">ID</th>';
+    h += '<th style="text-align:left;padding:6px 8px">' + esc(t("maturity.col_template")) + '</th>';
+    h += '<th style="text-align:center;padding:6px 8px">' + esc(t("maturity.col_kind")) + '</th>';
+    h += '<th style="text-align:right;padding:6px 8px">' + esc(t("maturity.col_score")) + '</th>';
+    h += '<th style="text-align:right;padding:6px 8px">' + esc(t("maturity.col_base_weight")) + '</th>';
+    h += '<th style="text-align:right;padding:6px 8px">' + esc(t("maturity.col_decay")) + '</th>';
+    h += '<th style="text-align:right;padding:6px 8px">' + esc(t("maturity.col_effective_weight")) + '</th>';
+    h += '<th style="text-align:center;padding:6px 8px">' + esc(t("maturity.col_excluded")) + '</th>';
+    h += '</tr></thead><tbody>';
+    detail.rows.forEach(function(row) {
+        var a = row.assessment;
+        var tplName = _maturityRowTemplateName(row);
+        var kindLabel = t("template.kind_" + row.kind);
+        var rowStyle = row.excluded ? "opacity:0.4;text-decoration:line-through" : "";
+        h += '<tr style="border-top:1px solid var(--border);' + rowStyle + '">';
+        h += '<td style="padding:6px 8px;font-weight:600">' + esc(a.id) + '</td>';
+        h += '<td style="padding:6px 8px">' + esc(tplName) + '</td>';
+        h += '<td style="text-align:center;padding:6px 8px"><span class="tpl-kind-badge tpl-kind-' + row.kind + '">' + esc(kindLabel) + '</span></td>';
+        h += '<td style="text-align:right;padding:6px 8px;font-weight:600">' + row.score + '%</td>';
+        h += '<td style="text-align:right;padding:6px 8px">';
+        h += '<input type="number" step="0.1" min="0" value="' + row.base.toFixed(2) + '" style="width:70px;padding:2px 6px;border:1px solid var(--gray-light);border-radius:4px;text-align:right" data-input="_updateAssessmentWeightOverride" data-args=\'' + _da(a.id) + '\' data-pass-value>';
+        h += '</td>';
+        h += '<td style="text-align:right;padding:6px 8px;color:var(--gray-dark);font-size:0.78em">';
+        if (row.quarters > 0 && cfg.decay_per_quarter > 0) {
+            h += '-' + Math.round((1 - row.decay_mult) * 100) + '% (' + row.quarters + 'q)';
+        } else {
+            h += '–';
+        }
+        h += '</td>';
+        h += '<td style="text-align:right;padding:6px 8px;font-weight:600">' + row.effective.toFixed(2) + '</td>';
+        h += '<td style="text-align:center;padding:6px 8px">';
+        h += '<input type="checkbox"' + (row.excluded ? " checked" : "") + ' data-change="_toggleAssessmentExcluded" data-args=\'' + _da(a.id) + '\' data-pass-checked>';
+        h += '</td>';
+        h += '</tr>';
+    });
+    h += '<tr style="border-top:2px solid var(--border);background:var(--bg)">';
+    h += '<td colspan="6" style="padding:8px;text-align:right;font-weight:700">' + esc(t("maturity.weighted_score")) + '</td>';
+    h += '<td style="padding:8px;text-align:right;font-weight:700">' + detail.sum_weights.toFixed(2) + '</td>';
+    h += '<td style="padding:8px;text-align:center;font-weight:700" class="' + _scoreColorClass(detail.score) + '">' + detail.score + '%</td>';
+    h += '</tr>';
+    h += '</tbody></table>';
+    h += '</div>';
+    h += '</details>';
+    return h;
+}
+
+function _updateMaturityConfig(path, value) {
+    if (!D.maturity_config) D.maturity_config = {};
+    var v = parseFloat(value);
+    if (isNaN(v)) return;
+    var parts = path.split(".");
+    var obj = D.maturity_config;
+    for (var i = 0; i < parts.length - 1; i++) {
+        if (!obj[parts[i]]) obj[parts[i]] = {};
+        obj = obj[parts[i]];
+    }
+    obj[parts[parts.length - 1]] = v;
+    _autoSave();
+    // Recompute maturity for all vendors that have validated assessments
+    (D.vendors || []).forEach(function(vd) { _refreshVendorMaturity(vd.id); });
+    renderPanel();
+}
+window._updateMaturityConfig = _updateMaturityConfig;
+
+function _updateAssessmentWeightOverride(assessId, value) {
+    var a = (D.assessments || []).find(function(x) { return x.id === assessId; });
+    if (!a) return;
+    var v = parseFloat(value);
+    if (isNaN(v)) { delete a.weight_override; }
+    else { a.weight_override = v; }
+    _refreshVendorMaturity(a.vendor_id);
+    _autoSave();
+    renderPanel();
+}
+window._updateAssessmentWeightOverride = _updateAssessmentWeightOverride;
+
+function _toggleAssessmentExcluded(assessId, checked) {
+    var a = (D.assessments || []).find(function(x) { return x.id === assessId; });
+    if (!a) return;
+    a.excluded = !!checked;
+    _refreshVendorMaturity(a.vendor_id);
+    _autoSave();
+    renderPanel();
+}
+window._toggleAssessmentExcluded = _toggleAssessmentExcluded;
+
+// Apply the weighted maturity score to the vendor's exposure.maturite
+// (0..4 scale). Idempotent. Call whenever an assessment is validated,
+// excluded, weight-overridden, or its score changes.
+function _refreshVendorMaturity(vendorId) {
+    var v = D.vendors.find(function(x) { return x.id === vendorId; });
+    if (!v) return;
+    var detail = _computeVendorMaturityDetail(vendorId);
+    if (!v.exposure) v.exposure = {};
+    // If no validated assessment, leave the existing value untouched so
+    // vendors with hand-entered maturity still work.
+    if (detail.rows.length > 0) {
+        v.exposure.maturite = _scoreToMaturite(detail.score);
+        v.maturity_score = detail.score; // raw 0..100 for display
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4128,6 +4393,31 @@ function _exportAssessmentExcel(assessId) {
         ws2.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
         ws2.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
 
+        // Column indices (1-based) for data validation targeting
+        var COL_TYPE = 4;
+        var COL_ANSWER = 7;
+        var COL_COVERAGE = 8;
+
+        // Shared coverage values — kept as internal identifiers so the import
+        // path (_normalizeCoverage) recognizes them in any locale.
+        var COVERAGE_OPTIONS = ["covered", "partial", "not_covered", "not_applicable"];
+
+        // Apply a list validation on a cell. ExcelJS requires the formula
+        // syntax: `'"a,b,c"'` (outer single quotes, inner double quotes, no
+        // spaces). Commas separate values.
+        function _setListValidation(cell, values, errorMsg) {
+            cell.dataValidation = {
+                type: "list",
+                allowBlank: true,
+                formulae: ['"' + values.join(",") + '"'],
+                showErrorMessage: true,
+                errorStyle: "warning",
+                errorTitle: "Valeur invalide",
+                error: errorMsg || "Choisissez une valeur dans la liste."
+            };
+        }
+
+        var rowIdx = 1; // header row is 1
         (tpl.sections || []).forEach(function(section) {
             (section.questions || []).forEach(function(q) {
                 var r = _findAssessmentResp(a, q.id) || {};
@@ -4136,7 +4426,7 @@ function _exportAssessmentExcel(assessId) {
                 if (Array.isArray(r.answer)) answerStr = r.answer.join("; ");
                 else if (r.answer && typeof r.answer === "object" && r.answer.name) answerStr = r.answer.name;
                 else if (r.answer != null) answerStr = String(r.answer);
-                ws2.addRow({
+                var row = ws2.addRow({
                     id: q.id,
                     section: section.title,
                     question: q.text,
@@ -4152,6 +4442,37 @@ function _exportAssessmentExcel(assessId) {
                     ap_owner: firstAp.owner || "",
                     justification: r.justification || ""
                 });
+                rowIdx++;
+
+                // 1. Coverage dropdown — same for every question
+                _setListValidation(row.getCell(COL_COVERAGE), COVERAGE_OPTIONS);
+
+                // 2. Type column — lock it, it's metadata filled by the app
+                row.getCell(COL_TYPE).protection = { locked: true };
+                row.getCell(COL_TYPE).font = { color: { argb: "FF64748B" } };
+
+                // 3. Answer column — type-dependent validation
+                var answerCell = row.getCell(COL_ANSWER);
+                if (q.type === "yes_no") {
+                    _setListValidation(answerCell, ["yes", "no"]);
+                } else if (q.type === "scale_1_5") {
+                    _setListValidation(answerCell, ["1", "2", "3", "4", "5"]);
+                } else if (q.type === "single_choice" && q.options && q.options.length) {
+                    // Excel list validation has a ~255 char limit on the
+                    // inline formula; skip validation if options exceed it.
+                    var joined = q.options.join(",");
+                    if (joined.length <= 250 && q.options.every(function(o) { return o.indexOf(",") < 0; })) {
+                        _setListValidation(answerCell, q.options);
+                    }
+                }
+                // multi_choice / free_text / file_upload → no validation
+                //   - multi_choice: free-form "value1; value2" so the user can
+                //     tick multiple options in one cell
+                //   - free_text: free input
+                //   - file_upload: file name written as text
+
+                // 4. ap_date target date — format as date
+                row.getCell(12).numFmt = "yyyy-mm-dd"; // ap_date column
             });
         });
 
@@ -4274,71 +4595,161 @@ function _applyImportedPayload(payload, existingAssessId, vendorId) {
     openAssessmentV2(a.id);
 }
 
+// Extract a plain string from an ExcelJS cell value. ExcelJS can return
+// numbers, Date objects, rich text, hyperlinks, formula results, etc. —
+// this normalizes everything into a trimmed string.
+function _xlCellText(cell) {
+    if (!cell) return "";
+    var v = cell.value;
+    if (v == null) return "";
+    if (typeof v === "string") return v.trim();
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    if (v instanceof Date) return v.toISOString().split("T")[0];
+    // Rich text: { richText: [ { text: "..." }, ... ] }
+    if (v.richText) return v.richText.map(function(p) { return p.text || ""; }).join("").trim();
+    // Hyperlink: { text: "...", hyperlink: "..." }
+    if (v.text) return String(v.text).trim();
+    // Formula: { formula: "...", result: "..." }
+    if (v.result != null) return _xlCellText({ value: v.result });
+    try { return String(v).trim(); } catch (e) { return ""; }
+}
+
 function _handleImportedExcel(file, existingAssessId, vendorId) {
     _loadExcelJS().then(function() {
         var reader = new FileReader();
         reader.onload = function(e) {
             var wb = new ExcelJS.Workbook();
             wb.xlsx.load(e.target.result).then(function() {
-                var ws = wb.getWorksheet(t("assessment.questionnaire_sheet")) || wb.worksheets.find(function(w) { return w.rowCount > 1; });
+                // Find the questionnaire sheet — try the localized name first,
+                // then any sheet named "Questionnaire" (FR or EN), then the
+                // first sheet that has an ID column in its header.
+                var ws = wb.getWorksheet(t("assessment.questionnaire_sheet"));
+                if (!ws) ws = wb.getWorksheet("Questionnaire");
+                if (!ws) {
+                    ws = wb.worksheets.find(function(w) {
+                        if (w.rowCount < 2) return false;
+                        var first = w.getRow(1).getCell(1);
+                        return _xlCellText(first).toLowerCase() === "id";
+                    });
+                }
                 if (!ws) { alert(t("assessment.invalid_excel")); return; }
-                // Build a responses array by matching header row
-                var headers = [];
-                ws.getRow(1).eachCell(function(cell, col) { headers[col] = String(cell.value || "").toLowerCase(); });
-                var idCol = headers.findIndex(function(h) { return h === "id"; });
-                if (idCol < 0) { alert(t("assessment.invalid_excel")); return; }
+
+                // Build a { header → columnIndex } map. ExcelJS columns are
+                // 1-based; eachCell also yields 1-based indices.
+                var headerIdx = {}; // lowercased header → col index (1-based)
+                ws.getRow(1).eachCell(function(cell, col) {
+                    var txt = _xlCellText(cell).toLowerCase();
+                    if (txt) headerIdx[txt] = col;
+                });
+
+                // Column resolver with FR / EN synonyms — the Excel template
+                // uses the localized header at export time, so we must accept
+                // both locales at import time.
+                function col(key, fallbacks) {
+                    var candidates = [key].concat(fallbacks || []);
+                    for (var i = 0; i < candidates.length; i++) {
+                        if (headerIdx[candidates[i]] != null) return headerIdx[candidates[i]];
+                    }
+                    return null;
+                }
+                // Map by internal key → Excel column index
+                var cIdx = {
+                    id:            col("id"),
+                    coverage:      col("coverage", ["couverture"]),
+                    answer:        col("answer", ["réponse", "reponse"]),
+                    comment:       col("comment", ["commentaire"]),
+                    justification: col("justification"),
+                    ap_title:      col("ap_title", ["action - intitulé", "action - intitule", "plan d'action - titre", "action plan - title", "action - title"]),
+                    ap_desc:       col("ap_desc", ["action - description", "plan d'action - description", "action plan - description"]),
+                    ap_date:       col("ap_date", ["action - date cible", "plan d'action - date cible", "action plan - target date", "action - target date"]),
+                    ap_owner:      col("ap_owner", ["action - responsable", "plan d'action - responsable", "action plan - owner", "action - owner"])
+                };
+
+                if (cIdx.id == null) { alert(t("assessment.invalid_excel")); return; }
+
                 // Build response map
                 var respByQ = {};
                 for (var r = 2; r <= ws.rowCount; r++) {
                     var row = ws.getRow(r);
-                    var qid = row.getCell(idCol).value;
+                    var qid = _xlCellText(row.getCell(cIdx.id));
                     if (!qid) continue;
-                    respByQ[String(qid)] = {
-                        coverage: _normalizeCoverage(row.getCell(headers.indexOf("coverage")).value),
-                        answer: row.getCell(headers.indexOf("answer")).value,
-                        comment: String(row.getCell(headers.indexOf("comment")).value || ""),
-                        justification: String(row.getCell(headers.indexOf("justification")).value || ""),
+                    var entry = {
+                        coverage: cIdx.coverage ? _normalizeCoverage(_xlCellText(row.getCell(cIdx.coverage))) : null,
+                        answer: cIdx.answer ? _xlCellText(row.getCell(cIdx.answer)) : "",
+                        comment: cIdx.comment ? _xlCellText(row.getCell(cIdx.comment)) : "",
+                        justification: cIdx.justification ? _xlCellText(row.getCell(cIdx.justification)) : "",
                         action_plans: []
                     };
-                    var apTitle = row.getCell(headers.indexOf("ap_title")).value;
+                    var apTitle = cIdx.ap_title ? _xlCellText(row.getCell(cIdx.ap_title)) : "";
                     if (apTitle) {
-                        respByQ[String(qid)].action_plans.push({
+                        entry.action_plans.push({
                             id: "AP-001",
-                            title: String(apTitle),
-                            description: String(row.getCell(headers.indexOf("ap_desc")).value || ""),
-                            target_date: String(row.getCell(headers.indexOf("ap_date")).value || ""),
-                            owner: String(row.getCell(headers.indexOf("ap_owner")).value || ""),
+                            title: apTitle,
+                            description: cIdx.ap_desc ? _xlCellText(row.getCell(cIdx.ap_desc)) : "",
+                            target_date: cIdx.ap_date ? _xlCellText(row.getCell(cIdx.ap_date)) : "",
+                            owner: cIdx.ap_owner ? _xlCellText(row.getCell(cIdx.ap_owner)) : "",
                             status: "proposed"
                         });
                     }
+                    respByQ[qid] = entry;
                 }
-                // Apply to existing assessment if provided, otherwise create new
+
+                // Apply to existing assessment if provided, otherwise try to
+                // match an existing one by scanning question IDs.
                 var a;
                 if (existingAssessId) a = _findAssessment(existingAssessId);
                 if (!a) {
-                    // Try to create a fresh one — we don't have template_snapshot from the Excel,
-                    // so we can only hydrate an existing assessment with the same IDs.
+                    // Heuristic: find an assessment whose responses intersect
+                    // with the imported question ids. This lets the user
+                    // import "from scratch" from the vendor detail without
+                    // having opened a specific assessment first.
+                    var qIds = Object.keys(respByQ);
+                    var candidate = (D.assessments || []).find(function(x) {
+                        if (!x.template_snapshot) return false;
+                        if (vendorId && x.vendor_id !== vendorId) return false;
+                        return (x.responses || []).some(function(rr) { return qIds.indexOf(rr.question_id) >= 0; });
+                    });
+                    if (candidate) a = candidate;
+                }
+                if (!a) {
                     alert(t("assessment.excel_need_existing"));
                     return;
                 }
+
+                var matched = 0;
                 (a.responses || []).forEach(function(resp) {
                     var imported = respByQ[resp.question_id];
                     if (!imported) return;
-                    resp.coverage = imported.coverage || resp.coverage;
+                    matched++;
+                    if (imported.coverage) resp.coverage = imported.coverage;
                     if (imported.answer != null && imported.answer !== "") resp.answer = imported.answer;
                     if (imported.comment) resp.comment = imported.comment;
                     if (imported.justification) resp.justification = imported.justification;
                     if (imported.action_plans && imported.action_plans.length) resp.action_plans = imported.action_plans;
                 });
+
+                if (matched === 0) {
+                    alert(t("assessment.excel_no_match"));
+                    return;
+                }
+
                 a.status = "pending_approval";
                 a.self_validation = true;
                 a.self_validated_at = new Date().toISOString();
                 _touchAssessment(a);
-                showStatus(t("assessment.imported"));
+                showStatus(t("assessment.imported") + " (" + matched + ")");
+                if (_selectedVendor !== null) _assessmentV2Returning = _selectedVendor;
                 openAssessmentV2(a.id);
+            }).catch(function(err) {
+                console.error("Excel import failed:", err);
+                alert(t("assessment.invalid_excel") + " — " + (err && err.message ? err.message : err));
             });
         };
+        reader.onerror = function() { alert(t("assessment.invalid_excel")); };
         reader.readAsArrayBuffer(file);
+    }).catch(function(err) {
+        console.error("ExcelJS load failed:", err);
+        alert(t("assessment.invalid_excel"));
     });
 }
 
