@@ -72,37 +72,7 @@
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 
-/* ── Table inline editors ─────────────────────────────── */
-/* Align the visual weight of inputs/selects that live inside table cells
-   (Risks tab, Measures registry, Documents table). Without this, default
-   browser styling gives selects thick embossed borders that clash with
-   the rest of the app. Checkboxes and radios are untouched. */
-td > input:not([type="checkbox"]):not([type="radio"]),
-td > select,
-td input:not([type="checkbox"]):not([type="radio"]):not(.ref-search),
-td select {
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 3px 6px;
-    background: var(--card-bg);
-    color: var(--text);
-    font-size: inherit;
-    font-family: inherit;
-    max-width: 100%;
-    box-sizing: border-box;
-    transition: border-color 0.12s, box-shadow 0.12s;
-}
-td > input:not([type="checkbox"]):not([type="radio"]):hover,
-td > select:hover { border-color: var(--gray-light); }
-td > input:not([type="checkbox"]):not([type="radio"]):focus,
-td > select:focus {
-    outline: none;
-    border-color: var(--light-blue);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
-}
-td > select:disabled { background: var(--bg); color: var(--text-muted); cursor: not-allowed; }
-/* ref-select lives inside <td> too — let it keep its own styling */
-td .ref-select, td .ref-select * { box-shadow: none; }
+/* Table inline editors and .ct-icon are defined in shared/css/cisotoolbox.css */
 
 /* ── Questionnaire templates ──────────────────────────── */
 /* Accessibility: all text colors target WCAG AA (4.5:1) or AAA (7:1).
@@ -112,8 +82,7 @@ td .ref-select, td .ref-select * { box-shadow: none; }
 .tpl-header h2 { margin: 0; flex: 1; }
 .tpl-meta { font-size: 0.78em; color: var(--gray-dark); font-weight: 600; }
 
-/* Generic inline SVG icon — inherits font color and font size. */
-.ct-icon { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; flex-shrink: 0; }
+/* .ct-icon is defined in shared/css/cisotoolbox.css (1em square, inherits currentColor) */
 
 /* Harmonized template-list header action buttons: identical size and
    height, SVG icon + label. Only the background color varies per action. */

@@ -1,16 +1,13 @@
 /* ── Vendor Portal — app-specific styles ───────────────── */
 
-/* Override the shared cisotoolbox.css body lock: the main Vendor app
-   uses fixed layout with a sidebar and an internal scroll container,
-   but the portal is a single scrollable page. */
-html, body { overflow: auto !important; height: auto !important; }
+/* The portal <body> does NOT carry .ct-app-shell, so the shared
+   cisotoolbox.css leaves the page with natural document scroll.
+   We just need to leave room for the fixed 40px toolbar. */
 body { min-height: 100vh; }
 .portal-main {
     padding: 24px;
     max-width: 1100px;
     margin: 0 auto;
-    /* Leave room for the fixed toolbar (40px) so the first card is not
-       hidden behind it. */
     padding-top: 64px;
 }
 

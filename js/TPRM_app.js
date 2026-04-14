@@ -49,26 +49,7 @@ function selectPanel(id) {
     renderPanel();
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Inline SVG icon set (Lucide-style). Returns a 1em-sized <svg>
-// that inherits currentColor, so callers can tint with CSS.
-// All paths use stroke-width:2, round caps/joins.
-// ═══════════════════════════════════════════════════════════════
-var _ICON_PATHS = {
-    "plus":        '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
-    "upload":      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
-    "download":    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
-    "clipboard":   '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
-    "shield":      '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
-    "pencil":      '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
-    "copy":        '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
-    "trash":       '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>'
-};
-function _icon(name) {
-    var p = _ICON_PATHS[name];
-    if (!p) return "";
-    return '<svg class="ct-icon" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
-}
+// SVG icons: _icon(name) is provided by shared/js/cisotoolbox.js
 
 function renderPanel() {
     var c = document.getElementById("content");
@@ -6193,45 +6174,29 @@ function _applyAiData(v, data) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SNAPSHOTS / HISTORY
-// ═══════════════════════════════════════════════════════════════
-// Reuses createSnapshot / restoreSnapshot / deleteSnapshot / exportSnapshot /
-// enableSnapEncryption / disableSnapEncryption / _getSnapshots / _isSnapEncrypted
-// from cisotoolbox_local.js.
-
-async function renderHistory() {
-    var el = document.getElementById("history-content");
-    if (!el) return;
-    var snaps = await _getSnapshots();
-    var isEnc = _isSnapEncrypted();
-    var h = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">';
-    h += '<button class="btn-add" data-click="createSnapshot">' + t("tprm.history.create") + '</button>';
-    if (isEnc) {
-        h += '<button class="btn-add" style="background:var(--red)" data-click="disableSnapEncryption">' + t("tprm.history.decrypt") + '</button>';
-        h += '<span style="color:var(--green);font-size:0.82em">&#128274; ' + t("tprm.history.encryption_active") + '</span>';
-    } else {
-        h += '<button class="btn-add" style="background:var(--light-blue)" data-click="enableSnapEncryption">' + t("tprm.history.encrypt") + '</button>';
-    }
-    h += '</div>';
-    if (!snaps.length) {
-        h += '<p style="color:var(--text-muted);font-size:0.9em">' + t("tprm.history.none") + '</p>';
-    } else {
-        h += '<table><thead><tr><th>' + t("tprm.history.col_name") + '</th><th>' + t("tprm.history.col_date") + '</th><th>' + t("tprm.history.col_org") + '</th><th>' + t("tprm.history.col_actions") + '</th></tr></thead><tbody>';
-        for (var i = snaps.length - 1; i >= 0; i--) {
-            var s = snaps[i];
-            var d = new Date(s.date);
-            var loc = _locale === "en" ? "en-US" : "fr-FR";
-            var dateStr = d.toLocaleDateString(loc) + " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
-            h += '<tr><td><strong>' + esc(s.name || "") + '</strong></td><td>' + dateStr + '</td><td style="font-size:0.82em">' + esc(s.societe || s.organization || "") + '</td>';
-            h += '<td><button class="btn-add" style="margin:0 4px 0 0" data-click="restoreSnapshot" data-args=\'' + _da(i) + '\'>' + t("tprm.history.restore") + '</button>';
-            h += '<button class="btn-add" style="margin:0 4px 0 0;background:var(--light-blue)" data-click="exportSnapshot" data-args=\'' + _da(i) + '\'>' + t("tprm.history.export") + '</button>';
-            h += '<button class="btn-del" data-click="deleteSnapshot" data-args=\'' + _da(i) + '\'>&times;</button></td></tr>';
+// Snapshots panel — delegates to shared _renderSnapshotsPanel() in
+// cisotoolbox_local.js. This function name is preserved because
+// cisotoolbox_local.js calls renderHistory() on window after each
+// snapshot CRUD operation.
+function renderHistory() {
+    _renderSnapshotsPanel({
+        target: "history-content",
+        orgField: "societe",
+        keys: {
+            create: "tprm.history.create",
+            encrypt: "tprm.history.encrypt",
+            decrypt: "tprm.history.decrypt",
+            encryption_active: "tprm.history.encryption_active",
+            none: "tprm.history.none",
+            col_name: "tprm.history.col_name",
+            col_date: "tprm.history.col_date",
+            col_org: "tprm.history.col_org",
+            col_actions: "tprm.history.col_actions",
+            restore: "tprm.history.restore",
+            export: "tprm.history.export",
+            hint: "tprm.history.hint"
         }
-        h += '</tbody></table>';
-    }
-    h += '<p style="margin-top:16px;color:var(--text-muted);font-size:0.82em">' + t("tprm.history.hint") + '</p>';
-    el.innerHTML = h;
+    });
 }
 window.renderHistory = renderHistory;
 
@@ -6244,29 +6209,10 @@ window.renderHistory = renderHistory;
 // INIT
 // ═══════════════════════════════════════════════════════════════
 
-// Wrap _autoSave so that every mutation pushes the previous state onto
-// the undo stack. Done once at load. This is how the Risk app gets
-// implicit undo history without sprinkling _saveState() everywhere.
-(function _installUndoHook() {
-    if (typeof _autoSave !== "function" || typeof _saveState !== "function") return;
-    if (_autoSave.__undoHooked) return;
-    var _original = _autoSave;
-    var _lastSerialized = null;
-    window._autoSave = function() {
-        try {
-            var cur = JSON.stringify(D);
-            if (_lastSerialized != null && _lastSerialized !== cur) {
-                _undoStack.push(_lastSerialized);
-                if (_undoStack.length > 50) _undoStack.shift();
-                _redoStack.length = 0;
-                if (typeof _updateUndoButtons === "function") _updateUndoButtons();
-            }
-            _lastSerialized = cur;
-        } catch (e) { /* ignore serialization errors */ }
-        return _original.apply(this, arguments);
-    };
-    window._autoSave.__undoHooked = true;
-})();
+// Install the shared undo hook: every _autoSave() pushes the previous
+// state onto _undoStack so undo/redo work without manual _saveState()
+// calls. Provided by shared/js/cisotoolbox_local.js.
+if (typeof _installUndoHook === "function") _installUndoHook();
 
 function renderAll() {
     var tr = document.getElementById("toolbar-right");
