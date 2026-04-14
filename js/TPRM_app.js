@@ -6216,7 +6216,10 @@ if (typeof _installUndoHook === "function") _installUndoHook();
 
 function renderAll() {
     var tr = document.getElementById("toolbar-right");
-    if (tr) tr.innerHTML = _getSettingsButtonHTML();
+    if (tr) {
+        tr.innerHTML = _getSettingsButtonHTML()
+            + (typeof _getGithubLinkHTML === "function" ? _getGithubLinkHTML("https://github.com/CISOToolbox/vendor") : "");
+    }
     _applyStaticTranslations();
     renderPanel();
     if (typeof _updateUndoButtons === "function") _updateUndoButtons();
