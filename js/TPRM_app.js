@@ -9,7 +9,7 @@
  */
 
 // CT_CONFIG — cisotoolbox framework integration
-var TPRM_INIT_DATA = { vendors: [], risks: [], assessments: [], documents: [], metadata: { organization: "", created: "" } };
+var TPRM_INIT_DATA = { vendors: [], risks: [], assessments: [], documents: [], questionnaire_templates: [], metadata: { organization: "", created: "" } };
 window.CT_CONFIG = {
     autosaveKey: "tprm_autosave",
     initDataVar: "TPRM_INIT_DATA",
@@ -60,6 +60,10 @@ function renderPanel() {
         case "measures": c.innerHTML = renderGlobalMeasures(); break;
         case "assessments": c.innerHTML = _selectedVendor !== null ? renderVendorDetail() : renderVendorList(); _vendorTab = "assessments"; break;
         case "documents": c.innerHTML = renderDocList(); break;
+        case "templates":
+            if (_editingTemplateId) { c.innerHTML = renderTemplateEditor(_editingTemplateId); }
+            else { c.innerHTML = renderTemplateList(); }
+            break;
         default: c.innerHTML = renderDashboard();
     }
     _initSliders();
@@ -2382,6 +2386,528 @@ window._newAssessmentImport = _newAssessmentImport;
 
 function backToVendors() { _selectedVendor = null; renderPanel(); }
 window.backToVendors = backToVendors;
+
+// ═══════════════════════════════════════════════════════════════
+// QUESTIONNAIRE TEMPLATES
+// ═══════════════════════════════════════════════════════════════
+//
+// Data model (mono-language, stored in D.questionnaire_templates):
+//   {
+//     id, name, description, language, version,
+//     created_at, updated_at,
+//     sections: [
+//       {
+//         id, title, description,
+//         questions: [
+//           {
+//             id, type, text, description, expected,
+//             weight, criticality, options
+//           }
+//         ]
+//       }
+//     ]
+//   }
+//
+// Question types: yes_no, scale_1_5, single_choice, multi_choice,
+// free_text, file_upload
+// Criticality: info, major, blocker
+// ═══════════════════════════════════════════════════════════════
+
+var _editingTemplateId = null;
+
+var QUESTION_TYPES = ["yes_no", "scale_1_5", "single_choice", "multi_choice", "free_text", "file_upload"];
+var CRITICALITY_LEVELS = ["info", "major", "blocker"];
+
+function _nextTemplateId() {
+    var n = (D.questionnaire_templates || []).length + 1;
+    var id;
+    do {
+        id = "TPL-" + String(n).padStart(3, "0");
+        n++;
+    } while ((D.questionnaire_templates || []).some(function(t0) { return t0.id === id; }));
+    return id;
+}
+
+function _nextSectionId(tpl) {
+    var n = (tpl.sections || []).length + 1;
+    var id;
+    do {
+        id = "SEC-" + String(n).padStart(3, "0");
+        n++;
+    } while ((tpl.sections || []).some(function(s) { return s.id === id; }));
+    return id;
+}
+
+function _nextQuestionId(section) {
+    var n = (section.questions || []).length + 1;
+    var id;
+    do {
+        id = "Q-" + String(n).padStart(3, "0");
+        n++;
+    } while ((section.questions || []).some(function(q) { return q.id === id; }));
+    return id;
+}
+
+function _today() { return new Date().toISOString().split("T")[0]; }
+
+// Migrate legacy TPRM_QUESTIONS into a default template on first load.
+// Called from renderPanel before rendering templates (or any assessments).
+function _ensureDefaultTemplate() {
+    if (!D.questionnaire_templates) D.questionnaire_templates = [];
+    if (D.questionnaire_templates.length > 0) return;
+    if (typeof TPRM_QUESTIONS === "undefined" || !TPRM_QUESTIONS.length) return;
+
+    var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
+    var tpl = {
+        id: "TPL-001",
+        name: lang === "en" ? "Standard vendor questionnaire" : "Questionnaire fournisseur standard",
+        description: lang === "en"
+            ? "Default security questionnaire (30 essential questions covering governance, access, cloud, DORA, etc.)."
+            : "Questionnaire de securite par defaut (30 questions essentielles couvrant gouvernance, acces, cloud, DORA, etc.).",
+        language: lang,
+        version: 1,
+        created_at: _today(),
+        updated_at: _today(),
+        sections: []
+    };
+
+    // Domain → section title mapping
+    var domainTitles = {
+        governance:     { fr: "Gouvernance et organisation",      en: "Governance and organization" },
+        access:         { fr: "Controle d'acces",                 en: "Access control" },
+        network:        { fr: "Securite reseau",                  en: "Network security" },
+        dev:            { fr: "Developpement securise",           en: "Secure development" },
+        data:           { fr: "Protection des donnees",           en: "Data protection" },
+        endpoint:       { fr: "Securite des postes",              en: "Endpoint security" },
+        detection:      { fr: "Detection et supervision",         en: "Detection and monitoring" },
+        continuity:     { fr: "Continuite d'activite",            en: "Business continuity" },
+        supply_chain:   { fr: "Chaine d'approvisionnement",       en: "Supply chain" },
+        audit:          { fr: "Audit et conformite",              en: "Audit and compliance" },
+        hr:             { fr: "Ressources humaines",              en: "Human resources" },
+        physical:       { fr: "Securite physique",                en: "Physical security" },
+        cloud:          { fr: "Securite cloud",                   en: "Cloud security" },
+        incidents:      { fr: "Gestion des incidents",            en: "Incident management" },
+        compliance:     { fr: "Conformite reglementaire",         en: "Regulatory compliance" },
+        dora:           { fr: "DORA - Prestataire TIC critique",  en: "DORA - Critical ICT provider" }
+    };
+
+    var sectionMap = {}; // domain → section index
+    TPRM_QUESTIONS.forEach(function(q) {
+        var domain = q.domain || "other";
+        if (!sectionMap.hasOwnProperty(domain)) {
+            var title = (domainTitles[domain] && domainTitles[domain][lang]) || domain;
+            tpl.sections.push({
+                id: "SEC-" + String(tpl.sections.length + 1).padStart(3, "0"),
+                title: title,
+                description: "",
+                questions: []
+            });
+            sectionMap[domain] = tpl.sections.length - 1;
+        }
+        var section = tpl.sections[sectionMap[domain]];
+        section.questions.push({
+            id: "Q-" + String(section.questions.length + 1).padStart(3, "0"),
+            type: "free_text",
+            text: lang === "en" ? (q.text_en || q.text_fr || "") : (q.text_fr || q.text_en || ""),
+            description: "",
+            expected: lang === "en" ? (q.expected_en || "") : (q.expected_fr || ""),
+            weight: q.weight || 5,
+            criticality: "major",
+            options: []
+        });
+    });
+
+    D.questionnaire_templates.push(tpl);
+}
+
+// ── List view ──────────────────────────────────────────────────
+function renderTemplateList() {
+    _ensureDefaultTemplate();
+    var templates = D.questionnaire_templates || [];
+    var h = '<div class="tpl-header">';
+    h += '<h2>' + t("template.title") + '</h2>';
+    h += '<button class="btn-add" data-click="createTemplate">' + t("template.new") + '</button>';
+    h += '</div>';
+    h += '<p class="panel-desc">' + t("template.intro") + '</p>';
+
+    if (!templates.length) {
+        return h + '<div class="empty-state">' + t("template.empty") + '</div>';
+    }
+
+    templates.forEach(function(tpl) {
+        var qCount = (tpl.sections || []).reduce(function(acc, s) { return acc + (s.questions || []).length; }, 0);
+        var sCount = (tpl.sections || []).length;
+        h += '<div class="tpl-card">';
+        h += '<div class="tpl-card-icon">&#x1F4CB;</div>';
+        h += '<div class="tpl-card-body">';
+        h += '<div class="tpl-card-name">' + esc(tpl.name || "") + '</div>';
+        h += '<div class="tpl-card-desc">' + esc(tpl.description || tpl.id) + '</div>';
+        h += '</div>';
+        h += '<div class="tpl-card-stats">';
+        h += '<span><strong>' + sCount + '</strong> ' + t("template.col_sections").toLowerCase() + '</span>';
+        h += '<span><strong>' + qCount + '</strong> ' + t("template.col_questions").toLowerCase() + '</span>';
+        h += '<span>' + esc((tpl.language || "").toUpperCase()) + '</span>';
+        h += '<span>v' + (tpl.version || 1) + '</span>';
+        h += '</div>';
+        h += '<div class="tpl-card-actions">';
+        h += '<button class="tpl-icon-btn" data-click="editTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.edit")) + '" data-tooltip="' + esc(t("common.edit")) + '" aria-label="' + esc(t("common.edit")) + '">&#x270E;</button>';
+        h += '<button class="tpl-icon-btn" data-click="duplicateTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.duplicate")) + '" data-tooltip="' + esc(t("common.duplicate")) + '" aria-label="' + esc(t("common.duplicate")) + '">&#x2398;</button>';
+        h += '<button class="tpl-icon-btn danger" data-click="deleteTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.delete")) + '" data-tooltip="' + esc(t("common.delete")) + '" aria-label="' + esc(t("common.delete")) + '">&#x1F5D1;</button>';
+        h += '</div>';
+        h += '</div>';
+    });
+    return h;
+}
+
+function createTemplate() {
+    var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
+    var tpl = {
+        id: _nextTemplateId(),
+        name: lang === "en" ? "New template" : "Nouveau template",
+        description: "",
+        language: lang,
+        version: 1,
+        created_at: _today(),
+        updated_at: _today(),
+        sections: []
+    };
+    if (!D.questionnaire_templates) D.questionnaire_templates = [];
+    D.questionnaire_templates.push(tpl);
+    _autoSave();
+    _editingTemplateId = tpl.id;
+    renderPanel();
+}
+window.createTemplate = createTemplate;
+
+function editTemplate(tplId) {
+    _editingTemplateId = tplId;
+    renderPanel();
+}
+window.editTemplate = editTemplate;
+
+function duplicateTemplate(tplId) {
+    var src = (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
+    if (!src) return;
+    var copy = JSON.parse(JSON.stringify(src));
+    copy.id = _nextTemplateId();
+    copy.name = src.name + " (copy)";
+    copy.version = 1;
+    copy.created_at = _today();
+    copy.updated_at = _today();
+    D.questionnaire_templates.push(copy);
+    _autoSave();
+    renderPanel();
+}
+window.duplicateTemplate = duplicateTemplate;
+
+function deleteTemplate(tplId) {
+    if (!confirm(t("template.confirm_delete"))) return;
+    D.questionnaire_templates = (D.questionnaire_templates || []).filter(function(tp) { return tp.id !== tplId; });
+    _autoSave();
+    renderPanel();
+}
+window.deleteTemplate = deleteTemplate;
+
+// ── Editor view ────────────────────────────────────────────────
+function renderTemplateEditor(tplId) {
+    var tpl = (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
+    if (!tpl) { _editingTemplateId = null; return renderTemplateList(); }
+
+    var h = '<div class="tpl-header">';
+    h += '<button class="btn-add" data-click="closeTemplateEditor">&laquo; ' + t("template.back") + '</button>';
+    h += '<h2>' + esc(tpl.name || "") + '</h2>';
+    h += '<span class="tpl-meta">' + esc(tpl.id) + ' &middot; v' + (tpl.version || 1) + '</span>';
+    h += '</div>';
+
+    // Template metadata block — reuse .tprm-form design from vendor/measure forms
+    h += '<div class="tprm-form tpl-editor-meta">';
+    h += '<div class="form-grid">';
+    h += '<div class="form-row"><label>' + t("template.name") + '</label>';
+    h += '<input type="text" value="' + esc(tpl.name || "") + '" data-input="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "name") + '\' data-pass-value></div>';
+    h += '<div class="form-row"><label>' + t("template.language") + '</label>';
+    h += '<select data-change="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "language") + '\' data-pass-value>';
+    h += '<option value="fr"' + (tpl.language === "fr" ? " selected" : "") + '>Francais</option>';
+    h += '<option value="en"' + (tpl.language === "en" ? " selected" : "") + '>English</option>';
+    h += '</select></div>';
+    h += '</div>';
+    h += '<div class="form-row"><label>' + t("template.description") + '</label>';
+    h += '<textarea rows="3" data-input="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "description") + '\' data-pass-value>' + esc(tpl.description || "") + '</textarea></div>';
+    h += '</div>';
+
+    // Sections header + add button
+    var sections = tpl.sections || [];
+    h += '<div class="tpl-header" style="margin-top:18px;margin-bottom:10px">';
+    h += '<span class="tpl-section-count">' + t("template.sections") + ' &middot; ' + sections.length + '</span>';
+    h += '<span style="flex:1"></span>';
+    h += '<button class="btn-add" data-click="addSection" data-args=\'' + _da(tpl.id) + '\'>' + t("template.add_section") + '</button>';
+    h += '</div>';
+
+    if (!sections.length) {
+        h += '<div class="empty-state">' + t("template.no_sections") + '</div>';
+    } else {
+        sections.forEach(function(section, si) {
+            h += _renderTemplateSection(tpl, section, si, sections.length);
+        });
+    }
+
+    return h;
+}
+
+function _renderTemplateSection(tpl, section, si, total) {
+    var h = '<div class="tpl-section">';
+    // Section header
+    h += '<div class="tpl-section-header">';
+    h += '<span class="tpl-section-id">' + esc(section.id) + '</span>';
+    h += '<input type="text" class="tpl-section-title" value="' + esc(section.title || "") + '" placeholder="' + esc(t("template.section_title")) + '" data-input="_onSectionFieldChange" data-args=\'' + _da(tpl.id, section.id, "title") + '\' data-pass-value>';
+    h += '<button class="tpl-icon-btn"' + (si === 0 ? ' disabled' : '') + ' data-click="moveSection" data-args=\'' + _da(tpl.id, section.id, -1) + '\' title="' + esc(t("common.move_up")) + '">&uarr;</button>';
+    h += '<button class="tpl-icon-btn"' + (si === total - 1 ? ' disabled' : '') + ' data-click="moveSection" data-args=\'' + _da(tpl.id, section.id, 1) + '\' title="' + esc(t("common.move_down")) + '">&darr;</button>';
+    h += '<button class="tpl-icon-btn danger" data-click="deleteSection" data-args=\'' + _da(tpl.id, section.id) + '\' title="' + esc(t("common.delete")) + '">&#x1F5D1;</button>';
+    h += '</div>';
+    // Section description
+    h += '<textarea class="tpl-section-desc" rows="1" placeholder="' + esc(t("template.section_description")) + '" data-input="_onSectionFieldChange" data-args=\'' + _da(tpl.id, section.id, "description") + '\' data-pass-value>' + esc(section.description || "") + '</textarea>';
+
+    // Questions
+    var questions = section.questions || [];
+    h += '<div class="tpl-section-questions-header">';
+    h += '<span class="tpl-section-questions-label">' + t("template.questions") + ' &middot; ' + questions.length + '</span>';
+    h += '<button class="btn-add" style="font-size:0.75em;padding:4px 10px" data-click="addQuestion" data-args=\'' + _da(tpl.id, section.id) + '\'>' + t("template.add_question") + '</button>';
+    h += '</div>';
+
+    if (!questions.length) {
+        h += '<div style="color:var(--text-muted);font-size:0.8em;padding:12px;text-align:center;background:var(--bg);border-radius:4px">' + t("template.no_questions") + '</div>';
+    } else {
+        questions.forEach(function(q, qi) {
+            h += _renderTemplateQuestion(tpl, section, q, qi, questions.length);
+        });
+    }
+
+    h += '</div>';
+    return h;
+}
+
+function _renderTemplateQuestion(tpl, section, q, qi, total) {
+    var h = '<div class="tpl-question">';
+    // Header row: id + type + criticality + weight + controls
+    h += '<div class="tpl-question-header">';
+    h += '<span class="tpl-question-id">' + esc(q.id) + '</span>';
+    h += '<select data-change="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "type") + '\' data-pass-value>';
+    QUESTION_TYPES.forEach(function(ty) {
+        h += '<option value="' + ty + '"' + (q.type === ty ? " selected" : "") + '>' + esc(t("qtype." + ty)) + '</option>';
+    });
+    h += '</select>';
+    var critClass = "tpl-criticality crit-" + (q.criticality || "major");
+    h += '<select class="' + critClass + '" data-change="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "criticality") + '\' data-pass-value>';
+    CRITICALITY_LEVELS.forEach(function(cr) {
+        h += '<option value="' + cr + '"' + (q.criticality === cr ? " selected" : "") + '>' + esc(t("criticality." + cr)) + '</option>';
+    });
+    h += '</select>';
+    h += '<label class="tpl-question-weight">' + t("template.weight");
+    h += '<input type="number" min="0" max="100" value="' + (q.weight || 0) + '" data-input="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "weight") + '\' data-pass-value>';
+    h += '</label>';
+    h += '<span style="flex:1"></span>';
+    h += '<button class="tpl-icon-btn"' + (qi === 0 ? ' disabled' : '') + ' data-click="moveQuestion" data-args=\'' + _da(tpl.id, section.id, q.id, -1) + '\' title="' + esc(t("common.move_up")) + '">&uarr;</button>';
+    h += '<button class="tpl-icon-btn"' + (qi === total - 1 ? ' disabled' : '') + ' data-click="moveQuestion" data-args=\'' + _da(tpl.id, section.id, q.id, 1) + '\' title="' + esc(t("common.move_down")) + '">&darr;</button>';
+    h += '<button class="tpl-icon-btn danger" data-click="deleteQuestion" data-args=\'' + _da(tpl.id, section.id, q.id) + '\' title="' + esc(t("common.delete")) + '">&times;</button>';
+    h += '</div>';
+    // Question text
+    h += '<textarea class="tpl-question-text" rows="2" placeholder="' + esc(t("template.question_text")) + '" data-input="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "text") + '\' data-pass-value>' + esc(q.text || "") + '</textarea>';
+    // Expected answer / evidence
+    h += '<textarea class="tpl-question-expected" rows="1" placeholder="' + esc(t("template.question_expected")) + '" data-input="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "expected") + '\' data-pass-value>' + esc(q.expected || "") + '</textarea>';
+    // Options editor for choice types
+    if (q.type === "single_choice" || q.type === "multi_choice") {
+        h += '<div class="tpl-question-options">';
+        h += '<div class="tpl-question-options-label">' + t("template.options") + '</div>';
+        (q.options || []).forEach(function(opt, oi) {
+            h += '<div class="tpl-question-option">';
+            h += '<input type="text" value="' + esc(opt) + '" data-input="_onOptionChange" data-args=\'' + _da(tpl.id, section.id, q.id, oi) + '\' data-pass-value>';
+            h += '<button class="tpl-icon-btn danger" data-click="deleteOption" data-args=\'' + _da(tpl.id, section.id, q.id, oi) + '\' title="' + esc(t("common.delete")) + '">&times;</button>';
+            h += '</div>';
+        });
+        h += '<button class="btn-add" style="font-size:0.75em;padding:3px 10px;margin-top:4px" data-click="addOption" data-args=\'' + _da(tpl.id, section.id, q.id) + '\'>+ ' + t("template.add_option") + '</button>';
+        h += '</div>';
+    }
+    h += '</div>';
+    return h;
+}
+
+function closeTemplateEditor() {
+    _editingTemplateId = null;
+    renderPanel();
+}
+window.closeTemplateEditor = closeTemplateEditor;
+
+// ── Template/section/question edit handlers ────────────────────
+function _findTemplate(tplId) {
+    return (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
+}
+function _findSection(tpl, sectionId) {
+    if (!tpl || !tpl.sections) return null;
+    return tpl.sections.find(function(s) { return s.id === sectionId; });
+}
+function _findQuestion(section, questionId) {
+    if (!section || !section.questions) return null;
+    return section.questions.find(function(q) { return q.id === questionId; });
+}
+function _touchTemplate(tpl) {
+    tpl.updated_at = _today();
+    _autoSave();
+}
+
+function _onTemplateFieldChange(tplId, field, value) {
+    var tpl = _findTemplate(tplId);
+    if (!tpl) return;
+    tpl[field] = value;
+    _touchTemplate(tpl);
+    // Update title in header live
+    if (field === "name") {
+        var h2 = document.querySelector("#content h2");
+        if (h2) h2.textContent = value;
+    }
+}
+window._onTemplateFieldChange = _onTemplateFieldChange;
+
+function _onSectionFieldChange(tplId, sectionId, field, value) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    if (!section) return;
+    section[field] = value;
+    _touchTemplate(tpl);
+}
+window._onSectionFieldChange = _onSectionFieldChange;
+
+function _onQuestionFieldChange(tplId, sectionId, questionId, field, value) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    var q = _findQuestion(section, questionId);
+    if (!q) return;
+    if (field === "weight") {
+        var n = parseInt(value, 10);
+        q.weight = isNaN(n) ? 0 : Math.max(0, Math.min(100, n));
+    } else {
+        q[field] = value;
+    }
+    _touchTemplate(tpl);
+    // Re-render only on type change (options editor appears/disappears)
+    if (field === "type") renderPanel();
+}
+window._onQuestionFieldChange = _onQuestionFieldChange;
+
+function addSection(tplId) {
+    var tpl = _findTemplate(tplId);
+    if (!tpl) return;
+    if (!tpl.sections) tpl.sections = [];
+    tpl.sections.push({
+        id: _nextSectionId(tpl),
+        title: t("template.new_section"),
+        description: "",
+        questions: []
+    });
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.addSection = addSection;
+
+function deleteSection(tplId, sectionId) {
+    if (!confirm(t("template.confirm_delete_section"))) return;
+    var tpl = _findTemplate(tplId);
+    if (!tpl) return;
+    tpl.sections = tpl.sections.filter(function(s) { return s.id !== sectionId; });
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.deleteSection = deleteSection;
+
+function moveSection(tplId, sectionId, delta) {
+    var tpl = _findTemplate(tplId);
+    if (!tpl || !tpl.sections) return;
+    var idx = tpl.sections.findIndex(function(s) { return s.id === sectionId; });
+    var newIdx = idx + delta;
+    if (idx < 0 || newIdx < 0 || newIdx >= tpl.sections.length) return;
+    var tmp = tpl.sections[idx];
+    tpl.sections[idx] = tpl.sections[newIdx];
+    tpl.sections[newIdx] = tmp;
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.moveSection = moveSection;
+
+function addQuestion(tplId, sectionId) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    if (!section) return;
+    if (!section.questions) section.questions = [];
+    section.questions.push({
+        id: _nextQuestionId(section),
+        type: "free_text",
+        text: "",
+        description: "",
+        expected: "",
+        weight: 5,
+        criticality: "major",
+        options: []
+    });
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.addQuestion = addQuestion;
+
+function deleteQuestion(tplId, sectionId, questionId) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    if (!section) return;
+    section.questions = section.questions.filter(function(q) { return q.id !== questionId; });
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.deleteQuestion = deleteQuestion;
+
+function moveQuestion(tplId, sectionId, questionId, delta) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    if (!section || !section.questions) return;
+    var idx = section.questions.findIndex(function(q) { return q.id === questionId; });
+    var newIdx = idx + delta;
+    if (idx < 0 || newIdx < 0 || newIdx >= section.questions.length) return;
+    var tmp = section.questions[idx];
+    section.questions[idx] = section.questions[newIdx];
+    section.questions[newIdx] = tmp;
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.moveQuestion = moveQuestion;
+
+function addOption(tplId, sectionId, questionId) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    var q = _findQuestion(section, questionId);
+    if (!q) return;
+    if (!q.options) q.options = [];
+    q.options.push("");
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.addOption = addOption;
+
+function deleteOption(tplId, sectionId, questionId, optionIdx) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    var q = _findQuestion(section, questionId);
+    if (!q || !q.options) return;
+    q.options.splice(optionIdx, 1);
+    _touchTemplate(tpl);
+    renderPanel();
+}
+window.deleteOption = deleteOption;
+
+function _onOptionChange(tplId, sectionId, questionId, optionIdx, value) {
+    var tpl = _findTemplate(tplId);
+    var section = _findSection(tpl, sectionId);
+    var q = _findQuestion(section, questionId);
+    if (!q || !q.options) return;
+    q.options[optionIdx] = value;
+    _touchTemplate(tpl);
+}
+window._onOptionChange = _onOptionChange;
 
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL MEASURES REGISTRY
