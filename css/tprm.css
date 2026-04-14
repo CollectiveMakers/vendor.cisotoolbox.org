@@ -90,6 +90,13 @@
 .tpl-card-stats strong { color: var(--text); font-weight: 700; }
 .tpl-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
+/* Template kind badges */
+.tpl-kind-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.65em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle; margin-left: 4px; }
+.tpl-kind-badge.tpl-kind-questionnaire { background: #dbeafe; color: #1e3a8a; }
+.tpl-kind-badge.tpl-kind-audit { background: #ede9fe; color: #5b21b6; }
+.tpl-card-icon.tpl-icon-questionnaire { background: #dbeafe; color: #1e3a8a; }
+.tpl-card-icon.tpl-icon-audit { background: #ede9fe; color: #5b21b6; }
+
 /* Bigger action buttons in the template list cards */
 .tpl-card-actions .tpl-icon-btn { padding: 8px 12px; font-size: 1.05em; min-width: 38px; }
 

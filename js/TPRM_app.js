@@ -2341,11 +2341,21 @@ window.deleteRisk = deleteRisk;
 function newAssessment(vendorId) {
     _ensureDefaultTemplate();
     var templates = D.questionnaire_templates || [];
-    var tplOptions = templates.map(function(tp) {
+    // Group templates by kind with an <optgroup> each.
+    var questionnaires = templates.filter(function(tp) { return (tp.kind || "questionnaire") === "questionnaire"; });
+    var audits = templates.filter(function(tp) { return tp.kind === "audit"; });
+    var tplOptions = "";
+    function _opt(tp) {
         var sCount = (tp.sections || []).length;
         var qCount = (tp.sections || []).reduce(function(n, s) { return n + (s.questions || []).length; }, 0);
         return '<option value="' + esc(tp.id) + '">' + esc(tp.name) + '  —  ' + sCount + ' ' + esc(t("template.col_sections").toLowerCase()) + ', ' + qCount + ' ' + esc(t("template.col_questions").toLowerCase()) + '</option>';
-    }).join("");
+    }
+    if (questionnaires.length) {
+        tplOptions += '<optgroup label="' + esc(t("template.kind_questionnaire")) + '">' + questionnaires.map(_opt).join("") + '</optgroup>';
+    }
+    if (audits.length) {
+        tplOptions += '<optgroup label="' + esc(t("template.kind_audit")) + '">' + audits.map(_opt).join("") + '</optgroup>';
+    }
 
     _showModal(
         '<h3>' + t("assessment.new") + '</h3>' +
@@ -2482,6 +2492,7 @@ var _editingTemplateId = null;
 
 var QUESTION_TYPES = ["yes_no", "scale_1_5", "single_choice", "multi_choice", "free_text", "file_upload"];
 var CRITICALITY_LEVELS = ["info", "major", "blocker"];
+var TEMPLATE_KINDS = ["questionnaire", "audit"];
 
 function _nextTemplateId() {
     var n = (D.questionnaire_templates || []).length + 1;
@@ -2553,23 +2564,42 @@ function _today() { return new Date().toISOString().split("T")[0]; }
 // Called from renderPanel before rendering templates (or any assessments).
 function _ensureDefaultTemplate() {
     if (!D.questionnaire_templates) D.questionnaire_templates = [];
-    // Heal any existing templates that were created with section-scoped IDs
-    // (pre-fix) and may have duplicate question ids.
+    // Heal any existing templates:
+    // - section-scoped IDs (pre-fix) may cause duplicate question ids
+    // - missing `kind` field → default to "questionnaire"
     var healed = false;
     D.questionnaire_templates.forEach(function(tpl) {
         if (_normalizeTemplateQuestionIds(tpl)) healed = true;
+        if (!tpl.kind) { tpl.kind = "questionnaire"; healed = true; }
     });
     if (healed) _autoSave();
-    if (D.questionnaire_templates.length > 0) return;
-    if (typeof TPRM_QUESTIONS === "undefined" || !TPRM_QUESTIONS.length) return;
 
     var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
+    var added = false;
+
+    // Seed the default vendor questionnaire if absent
+    if (!D.questionnaire_templates.some(function(tp) { return tp.id === "TPL-001"; })) {
+        if (typeof TPRM_QUESTIONS !== "undefined" && TPRM_QUESTIONS.length) {
+            D.questionnaire_templates.push(_buildDefaultQuestionnaireTemplate(lang));
+            added = true;
+        }
+    }
+    // Seed the default audit template (ANSSI — 42 hygiene rules)
+    if (!D.questionnaire_templates.some(function(tp) { return tp.id === "TPL-002"; })) {
+        D.questionnaire_templates.push(_buildAnssi42AuditTemplate(lang));
+        added = true;
+    }
+    if (added) _autoSave();
+}
+
+function _buildDefaultQuestionnaireTemplate(lang) {
     var tpl = {
         id: "TPL-001",
         name: lang === "en" ? "Standard vendor questionnaire" : "Questionnaire fournisseur standard",
         description: lang === "en"
             ? "Default security questionnaire (30 essential questions covering governance, access, cloud, DORA, etc.)."
             : "Questionnaire de securite par defaut (30 questions essentielles couvrant gouvernance, acces, cloud, DORA, etc.).",
+        kind: "questionnaire",
         language: lang,
         version: 1,
         created_at: _today(),
@@ -2577,7 +2607,6 @@ function _ensureDefaultTemplate() {
         sections: []
     };
 
-    // Domain → section title mapping
     var domainTitles = {
         governance:     { fr: "Gouvernance et organisation",      en: "Governance and organization" },
         access:         { fr: "Controle d'acces",                 en: "Access control" },
@@ -2597,7 +2626,7 @@ function _ensureDefaultTemplate() {
         dora:           { fr: "DORA - Prestataire TIC critique",  en: "DORA - Critical ICT provider" }
     };
 
-    var sectionMap = {}; // domain → section index
+    var sectionMap = {};
     var globalQIdx = 0;
     TPRM_QUESTIONS.forEach(function(q) {
         var domain = q.domain || "other";
@@ -2624,8 +2653,121 @@ function _ensureDefaultTemplate() {
             options: []
         });
     });
+    return tpl;
+}
 
-    D.questionnaire_templates.push(tpl);
+// ANSSI — 42 règles d'hygiène informatique
+// Source: https://cyber.gouv.fr/publications/guide-dhygiene-informatique
+// Organized in 10 thematic groups.
+var ANSSI_42_RULES = [
+    // 1. Sensibiliser et former
+    { n: 1, group: "training", fr: "Former les equipes operationnelles a la securite des systemes d'information", en: "Train operational teams on information system security" },
+    { n: 2, group: "training", fr: "Sensibiliser les utilisateurs aux bonnes pratiques elementaires de securite informatique", en: "Raise user awareness of basic IT security practices" },
+    { n: 3, group: "training", fr: "Maitriser les risques de l'infogerance", en: "Control the risks of outsourcing" },
+    // 2. Connaitre le SI
+    { n: 4, group: "inventory", fr: "Identifier les informations et serveurs les plus sensibles et maintenir un schema du reseau", en: "Identify the most sensitive information and servers and maintain a network diagram" },
+    { n: 5, group: "inventory", fr: "Disposer d'un inventaire exhaustif des comptes privilegies et le maintenir a jour", en: "Maintain a complete and up-to-date inventory of privileged accounts" },
+    { n: 6, group: "inventory", fr: "Organiser les procedures d'arrivee, de depart et de changement de fonction des utilisateurs", en: "Organize onboarding, offboarding and role change procedures" },
+    { n: 7, group: "inventory", fr: "Autoriser la connexion au reseau de l'entite aux seuls equipements maitrises", en: "Only allow controlled devices to connect to the entity's network" },
+    // 3. Authentifier et controler les acces
+    { n: 8, group: "access", fr: "Identifier nommement chaque personne accedant au systeme et distinguer les roles utilisateur/administrateur", en: "Identify each user by name and separate user/administrator roles" },
+    { n: 9, group: "access", fr: "Attribuer les bons droits sur les ressources sensibles du systeme d'information", en: "Grant appropriate rights on sensitive information system resources" },
+    { n: 10, group: "access", fr: "Definir et verifier des regles de choix et de dimensionnement des mots de passe", en: "Define and enforce password selection and sizing rules" },
+    { n: 11, group: "access", fr: "Proteger les mots de passe stockes sur les systemes", en: "Protect passwords stored on systems" },
+    { n: 12, group: "access", fr: "Changer les elements d'authentification par defaut sur les equipements et services", en: "Change default authentication credentials on equipment and services" },
+    { n: 13, group: "access", fr: "Privilegier lorsque c'est possible une authentification forte", en: "Favor strong authentication whenever possible" },
+    // 4. Securiser les postes
+    { n: 14, group: "endpoint", fr: "Mettre en place un niveau de securite minimal sur l'ensemble du parc informatique", en: "Establish a minimum security baseline across the IT estate" },
+    { n: 15, group: "endpoint", fr: "Se proteger des menaces relatives a l'utilisation de supports amovibles", en: "Protect against threats from removable media" },
+    { n: 16, group: "endpoint", fr: "Utiliser un outil de gestion centralise afin d'homogeneiser les politiques de securite", en: "Use centralized management to homogenize security policies" },
+    { n: 17, group: "endpoint", fr: "Activer et configurer le pare-feu local des postes de travail", en: "Enable and configure local workstation firewalls" },
+    { n: 18, group: "endpoint", fr: "Chiffrer les donnees sensibles transmises par voie Internet", en: "Encrypt sensitive data transmitted over the Internet" },
+    // 5. Securiser le reseau
+    { n: 19, group: "network", fr: "Segmenter le reseau et mettre en place un cloisonnement entre ces zones", en: "Segment the network and partition between zones" },
+    { n: 20, group: "network", fr: "S'assurer de la securite des reseaux d'acces Wi-Fi et de la separation des usages", en: "Ensure Wi-Fi access network security and separation of uses" },
+    { n: 21, group: "network", fr: "Utiliser des protocoles reseaux securises des qu'ils existent", en: "Use secure network protocols whenever available" },
+    { n: 22, group: "network", fr: "Mettre en place une passerelle d'acces securise a Internet", en: "Implement a secure Internet access gateway" },
+    { n: 23, group: "network", fr: "Cloisonner les services visibles depuis Internet du reste du systeme d'information", en: "Isolate Internet-facing services from the rest of the IS" },
+    { n: 24, group: "network", fr: "Proteger sa messagerie professionnelle", en: "Protect the corporate email system" },
+    { n: 25, group: "network", fr: "Securiser les interconnexions reseau dediees avec les partenaires", en: "Secure dedicated network interconnections with partners" },
+    { n: 26, group: "network", fr: "Controler et proteger l'acces aux salles serveurs et aux locaux techniques", en: "Control and protect access to server rooms and technical premises" },
+    // 6. Securiser l'administration
+    { n: 27, group: "admin", fr: "Interdire l'acces a Internet depuis les comptes ou depuis les machines utilisees pour l'administration", en: "Forbid Internet access from admin accounts or admin machines" },
+    { n: 28, group: "admin", fr: "Utiliser un reseau dedie et cloisonne pour l'administration du systeme d'information", en: "Use a dedicated and partitioned network for IS administration" },
+    { n: 29, group: "admin", fr: "Limiter au strict besoin operationnel les droits d'administration sur les postes de travail", en: "Limit workstation admin rights to operational necessity" },
+    // 7. Gerer le nomadisme
+    { n: 30, group: "mobility", fr: "Prendre des mesures de securisation physique des terminaux nomades", en: "Take physical security measures for mobile devices" },
+    { n: 31, group: "mobility", fr: "Chiffrer les donnees sensibles, en particulier sur le materiel potentiellement perdable", en: "Encrypt sensitive data, especially on devices that could be lost" },
+    { n: 32, group: "mobility", fr: "Securiser la connexion reseau des postes utilises en situation de nomadisme", en: "Secure the network connection of mobile endpoints" },
+    { n: 33, group: "mobility", fr: "Adopter des politiques de securite dediees aux terminaux mobiles", en: "Adopt dedicated security policies for mobile devices" },
+    // 8. Maintenir le SI a jour
+    { n: 34, group: "update", fr: "Definir une politique de mise a jour des composants du systeme d'information", en: "Define an IS component update policy" },
+    { n: 35, group: "update", fr: "Anticiper la fin de la maintenance des logiciels et systemes et limiter les adherences logicielles", en: "Anticipate end-of-life of software and systems and limit dependencies" },
+    // 9. Superviser, auditer, reagir
+    { n: 36, group: "monitor", fr: "Activer et configurer les journaux des composants les plus importants", en: "Enable and configure logging for the most important components" },
+    { n: 37, group: "monitor", fr: "Definir et appliquer une politique de sauvegarde des composants critiques", en: "Define and apply a backup policy for critical components" },
+    { n: 38, group: "monitor", fr: "Proceder a des controles et audits de securite reguliers puis appliquer les actions correctives associees", en: "Carry out regular security checks and audits then apply corrective actions" },
+    { n: 39, group: "monitor", fr: "Designer un point de contact en securite des systemes d'information et s'assurer de sa formation", en: "Appoint a security contact and ensure they are trained" },
+    { n: 40, group: "monitor", fr: "Definir une procedure de gestion des incidents de securite", en: "Define a security incident management procedure" },
+    // 10. Pour aller plus loin
+    { n: 41, group: "advanced", fr: "Mener une analyse formelle des risques pesant sur le systeme d'information", en: "Conduct a formal risk analysis of the information system" },
+    { n: 42, group: "advanced", fr: "Privilegier l'usage de produits et de services qualifies par l'ANSSI", en: "Prefer products and services certified by ANSSI" }
+];
+
+function _buildAnssi42AuditTemplate(lang) {
+    var groupTitles = {
+        training:  { fr: "1. Sensibiliser et former",               en: "1. Raise awareness and train" },
+        inventory: { fr: "2. Connaitre le systeme d'information",   en: "2. Know the information system" },
+        access:    { fr: "3. Authentifier et controler les acces",  en: "3. Authenticate and control access" },
+        endpoint:  { fr: "4. Securiser les postes",                 en: "4. Secure workstations" },
+        network:   { fr: "5. Securiser le reseau",                  en: "5. Secure the network" },
+        admin:     { fr: "6. Securiser l'administration",           en: "6. Secure administration" },
+        mobility:  { fr: "7. Gerer le nomadisme",                   en: "7. Manage mobility" },
+        update:    { fr: "8. Maintenir le SI a jour",               en: "8. Keep the IS up to date" },
+        monitor:   { fr: "9. Superviser, auditer, reagir",          en: "9. Monitor, audit, respond" },
+        advanced:  { fr: "10. Pour aller plus loin",                en: "10. Going further" }
+    };
+
+    var tpl = {
+        id: "TPL-002",
+        name: lang === "en" ? "Audit - ANSSI 42 hygiene rules" : "Audit - 42 regles d'hygiene ANSSI",
+        description: lang === "en"
+            ? "Audit template based on the ANSSI 42 IT hygiene rules, organized into 10 thematic groups. Designed to be filled by an internal or external auditor against the vendor's environment."
+            : "Modele d'audit base sur les 42 regles d'hygiene informatique ANSSI, organisees en 10 groupes thematiques. Destine a etre rempli par un auditeur interne ou externe pour le perimetre du fournisseur.",
+        kind: "audit",
+        language: lang,
+        version: 1,
+        created_at: _today(),
+        updated_at: _today(),
+        sections: []
+    };
+
+    var sectionIdx = {};
+    ANSSI_42_RULES.forEach(function(rule, i) {
+        if (!sectionIdx.hasOwnProperty(rule.group)) {
+            tpl.sections.push({
+                id: "SEC-" + String(tpl.sections.length + 1).padStart(3, "0"),
+                title: groupTitles[rule.group][lang],
+                description: "",
+                questions: []
+            });
+            sectionIdx[rule.group] = tpl.sections.length - 1;
+        }
+        var section = tpl.sections[sectionIdx[rule.group]];
+        // Rule 1–42 directly as question IDs (stable across languages)
+        var label = "R" + String(rule.n).padStart(2, "0") + " — " + rule[lang];
+        section.questions.push({
+            id: "Q-" + String(rule.n).padStart(3, "0"),
+            type: "free_text",
+            text: label,
+            description: "",
+            expected: "",
+            weight: 5,
+            criticality: "major",
+            options: []
+        });
+    });
+    return tpl;
 }
 
 // ── List view ──────────────────────────────────────────────────
@@ -2634,7 +2776,9 @@ function renderTemplateList() {
     var templates = D.questionnaire_templates || [];
     var h = '<div class="tpl-header">';
     h += '<h2>' + t("template.title") + '</h2>';
-    h += '<button class="btn-add" data-click="createTemplate">' + t("template.new") + '</button>';
+    h += '<span style="flex:1"></span>';
+    h += '<button class="btn-add" data-click="createTemplate" data-args=\'["questionnaire"]\'>' + t("template.new_questionnaire") + '</button>';
+    h += '<button class="btn-add" style="background:var(--violet)" data-click="createTemplate" data-args=\'["audit"]\'>' + t("template.new_audit") + '</button>';
     h += '</div>';
     h += '<p class="panel-desc">' + t("template.intro") + '</p>';
 
@@ -2643,12 +2787,14 @@ function renderTemplateList() {
     }
 
     templates.forEach(function(tpl) {
+        var kind = tpl.kind || "questionnaire";
         var qCount = (tpl.sections || []).reduce(function(acc, s) { return acc + (s.questions || []).length; }, 0);
         var sCount = (tpl.sections || []).length;
+        var icon = kind === "audit" ? "&#x1F50D;" : "&#x1F4CB;"; // 🔍 vs 📋
         h += '<div class="tpl-card">';
-        h += '<div class="tpl-card-icon">&#x1F4CB;</div>';
+        h += '<div class="tpl-card-icon tpl-icon-' + kind + '">' + icon + '</div>';
         h += '<div class="tpl-card-body">';
-        h += '<div class="tpl-card-name">' + esc(tpl.name || "") + '</div>';
+        h += '<div class="tpl-card-name">' + esc(tpl.name || "") + '  <span class="tpl-kind-badge tpl-kind-' + kind + '">' + esc(t("template.kind_" + kind)) + '</span></div>';
         h += '<div class="tpl-card-desc">' + esc(tpl.description || tpl.id) + '</div>';
         h += '</div>';
         h += '<div class="tpl-card-stats">';
@@ -2667,12 +2813,14 @@ function renderTemplateList() {
     return h;
 }
 
-function createTemplate() {
+function createTemplate(kind) {
     var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
+    var k = (kind === "audit" ? "audit" : "questionnaire");
     var tpl = {
         id: _nextTemplateId(),
-        name: lang === "en" ? "New template" : "Nouveau template",
+        name: lang === "en" ? (k === "audit" ? "New audit template" : "New template") : (k === "audit" ? "Nouveau modele d'audit" : "Nouveau template"),
         description: "",
+        kind: k,
         language: lang,
         version: 1,
         created_at: _today(),
@@ -2721,9 +2869,11 @@ function renderTemplateEditor(tplId) {
     var tpl = (D.questionnaire_templates || []).find(function(tp) { return tp.id === tplId; });
     if (!tpl) { _editingTemplateId = null; return renderTemplateList(); }
 
+    var kind = tpl.kind || "questionnaire";
     var h = '<div class="tpl-header">';
     h += '<button class="btn-add" data-click="closeTemplateEditor">&laquo; ' + t("template.back") + '</button>';
     h += '<h2>' + esc(tpl.name || "") + '</h2>';
+    h += '<span class="tpl-kind-badge tpl-kind-' + kind + '">' + esc(t("template.kind_" + kind)) + '</span>';
     h += '<span class="tpl-meta">' + esc(tpl.id) + ' &middot; v' + (tpl.version || 1) + '</span>';
     h += '</div>';
 
@@ -2732,11 +2882,20 @@ function renderTemplateEditor(tplId) {
     h += '<div class="form-grid">';
     h += '<div class="form-row"><label>' + t("template.name") + '</label>';
     h += '<input type="text" value="' + esc(tpl.name || "") + '" data-input="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "name") + '\' data-pass-value></div>';
+    h += '<div class="form-row"><label>' + t("template.kind") + '</label>';
+    h += '<select data-change="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "kind") + '\' data-pass-value>';
+    TEMPLATE_KINDS.forEach(function(k) {
+        h += '<option value="' + k + '"' + (kind === k ? " selected" : "") + '>' + esc(t("template.kind_" + k)) + '</option>';
+    });
+    h += '</select></div>';
+    h += '</div>';
+    h += '<div class="form-grid">';
     h += '<div class="form-row"><label>' + t("template.language") + '</label>';
     h += '<select data-change="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "language") + '\' data-pass-value>';
     h += '<option value="fr"' + (tpl.language === "fr" ? " selected" : "") + '>Francais</option>';
     h += '<option value="en"' + (tpl.language === "en" ? " selected" : "") + '>English</option>';
     h += '</select></div>';
+    h += '<div class="form-row"></div>'; // spacer for grid
     h += '</div>';
     h += '<div class="form-row"><label>' + t("template.description") + '</label>';
     h += '<textarea rows="3" data-input="_onTemplateFieldChange" data-args=\'' + _da(tpl.id, "description") + '\' data-pass-value>' + esc(tpl.description || "") + '</textarea></div>';
@@ -3083,6 +3242,23 @@ function _getAssessmentTemplate(a) {
     return (D.questionnaire_templates || []).find(function(tp) { return tp.id === a.template_id; }) || null;
 }
 
+// Returns the "kind" (questionnaire | audit) for an assessment,
+// defaulting to "questionnaire" for legacy data.
+function _assessmentKind(a) {
+    var tpl = _getAssessmentTemplate(a);
+    return (tpl && tpl.kind) || "questionnaire";
+}
+
+// Pick the right i18n key based on the assessment kind. Falls back to the
+// generic key if the kind-specific one is missing.
+function _tk(a, baseKey) {
+    var kind = _assessmentKind(a);
+    var specific = baseKey + "_" + kind;
+    var val = t(specific);
+    if (val && val !== specific) return val;
+    return t(baseKey);
+}
+
 function _allQuestions(tpl) {
     if (!tpl || !tpl.sections) return [];
     var out = [];
@@ -3154,9 +3330,11 @@ function openAssessmentV2(assessId) {
     var score = _computeAssessmentV2Score(a);
 
     // ── Header ──
+    var kind = _assessmentKind(a);
     var h = '<div class="tpl-header">';
     h += '<button class="btn-add" data-click="_backFromAssessmentV2">&laquo; ' + t("nav.assessments") + '</button>';
     h += '<h2>' + esc(a.id) + ' — ' + esc(_vendorName(a.vendor_id)) + '</h2>';
+    h += '<span class="tpl-kind-badge tpl-kind-' + kind + '">' + esc(t("template.kind_" + kind)) + '</span>';
     h += '<span class="tpl-meta">' + esc(tpl.name) + ' v' + (a.template_version || 1) + '</span>';
     h += '</div>';
 
@@ -3183,8 +3361,8 @@ function openAssessmentV2(assessId) {
     // Actions toolbar
     h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
     h += '<button class="btn-add" data-click="_exportAssessmentJSON" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.export_json")) + '</button>';
-    h += '<button class="btn-add" data-click="_exportAssessmentExcel" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.export_excel")) + '</button>';
-    h += '<button class="btn-add" data-click="_importAssessmentIntoExisting" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.import_response")) + '</button>';
+    h += '<button class="btn-add" data-click="_exportAssessmentExcel" data-args=\'' + _da(a.id) + '\'>' + esc(_tk(a, "assessment.export_excel")) + '</button>';
+    h += '<button class="btn-add" data-click="_importAssessmentIntoExisting" data-args=\'' + _da(a.id) + '\'>' + esc(_tk(a, "assessment.import_response")) + '</button>';
     h += '<span style="flex:1"></span>';
     if (a.status === "pending_approval") {
         h += '<button class="btn-add" style="background:var(--green)" data-click="_approveAssessment" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.approve")) + '</button>';
@@ -3214,14 +3392,14 @@ function openAssessmentV2(assessId) {
     var validationBlockStyle = canValidate ? "border-color:var(--light-blue)" : "border-color:var(--gray-light);opacity:0.75";
     h += '<div id="evalv2-validation-block" class="tpl-section" style="' + validationBlockStyle + '">';
     h += '<div class="tpl-section-header">';
-    h += '<span class="tpl-section-title" style="border:none;font-size:1em;font-weight:700">' + esc(t("assessment.self_validation_title")) + '</span>';
+    h += '<span class="tpl-section-title" style="border:none;font-size:1em;font-weight:700">' + esc(_tk(a, "assessment.self_validation_title")) + '</span>';
     h += '</div>';
-    h += '<p style="font-size:0.85em;color:var(--gray-dark);margin:0 0 10px">' + esc(t("assessment.self_validation_hint")) + '</p>';
+    h += '<p style="font-size:0.85em;color:var(--gray-dark);margin:0 0 10px">' + esc(_tk(a, "assessment.self_validation_hint")) + '</p>';
     var cursor = canValidate ? "pointer" : "not-allowed";
     var labelTitle = canValidate ? "" : ' title="' + esc(t("assessment.complete_all_questions")) + '"';
     h += '<label id="evalv2-validation-label" style="display:flex;align-items:center;gap:8px;font-size:0.9em;font-weight:600;cursor:' + cursor + '"' + labelTitle + '>';
     h += '<input type="checkbox" id="evalv2-validation-check"' + (a.self_validation ? " checked" : "") + (canValidate ? "" : " disabled") + ' data-change="_toggleSelfValidation" data-args=\'' + _da(a.id) + '\' data-pass-checked>';
-    h += '<span>' + esc(t("assessment.self_validation_label")) + '</span>';
+    h += '<span>' + esc(_tk(a, "assessment.self_validation_label")) + '</span>';
     h += '</label>';
     // Helper text when disabled
     h += '<div id="evalv2-validation-helper" style="font-size:0.78em;color:var(--orange);margin-top:6px;display:' + (canValidate ? "none" : "block") + '">';
@@ -3290,30 +3468,30 @@ function _renderAssessmentQuestion(a, section, q, resp) {
             h += '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">';
             h += '<span style="color:var(--orange);font-size:1.1em;line-height:1">&#9888;</span>';
             h += '<div>';
-            h += '<div style="font-size:0.85em;font-weight:700;color:#7c2d12">' + esc(t("assessment.action_required_title")) + '</div>';
-            h += '<div style="font-size:0.78em;color:#7c2d12;margin-top:2px">' + esc(resp.coverage === "partial" ? t("assessment.action_required_partial") : t("assessment.action_required_not_covered")) + '</div>';
+            h += '<div style="font-size:0.85em;font-weight:700;color:#7c2d12">' + esc(_tk(a, "assessment.action_required_title")) + '</div>';
+            h += '<div style="font-size:0.78em;color:#7c2d12;margin-top:2px">' + esc(resp.coverage === "partial" ? _tk(a, "assessment.action_required_partial") : _tk(a, "assessment.action_required_not_covered")) + '</div>';
             h += '</div>';
             h += '</div>';
         } else {
             h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#166534;font-size:0.82em;font-weight:600">';
             h += '<span>&#10003;</span>';
-            h += esc(hasAction ? t("assessment.action_recorded") : t("assessment.justification_recorded"));
+            h += esc(hasAction ? _tk(a, "assessment.action_recorded") : _tk(a, "assessment.justification_recorded"));
             h += '</div>';
         }
         // Action list
         if (resp.action_plans && resp.action_plans.length) {
-            h += '<div style="font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:6px">' + esc(t("assessment.action_plan_required")) + '</div>';
+            h += '<div style="font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-dark);margin-bottom:6px">' + esc(_tk(a, "assessment.action_plan_required")) + '</div>';
             resp.action_plans.forEach(function(ap, api) {
-                h += _renderActionPlanForm(a.id, q.id, ap, api);
+                h += _renderActionPlanForm(a, q.id, ap, api);
             });
         }
         h += '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">';
-        h += '<button class="btn-add" style="background:' + (satisfied ? "var(--light-blue)" : "var(--orange)") + ';margin:0" data-click="_addActionPlan" data-args=\'' + _da(a.id, q.id) + '\'>+ ' + esc(t("assessment.add_action_plan")) + '</button>';
+        h += '<button class="btn-add" style="background:' + (satisfied ? "var(--light-blue)" : "var(--orange)") + ';margin:0" data-click="_addActionPlan" data-args=\'' + _da(a.id, q.id) + '\'>+ ' + esc(_tk(a, "assessment.add_action_plan")) + '</button>';
         h += '</div>';
         // Justification (alternative)
         h += '<div style="margin-top:10px">';
-        h += '<label style="font-size:0.78em;font-weight:600;color:var(--gray-dark);display:block;margin-bottom:3px">' + esc(t("assessment.justification_or")) + '</label>';
-        h += '<textarea rows="2" class="tpl-question-expected" placeholder="' + esc(t("assessment.justification_placeholder")) + '" data-input="_onAssessmentJustificationChange" data-args=\'' + _da(a.id, q.id) + '\' data-pass-value>' + esc(resp.justification || "") + '</textarea>';
+        h += '<label style="font-size:0.78em;font-weight:600;color:var(--gray-dark);display:block;margin-bottom:3px">' + esc(_tk(a, "assessment.justification_or")) + '</label>';
+        h += '<textarea rows="2" class="tpl-question-expected" placeholder="' + esc(_tk(a, "assessment.justification_placeholder")) + '" data-input="_onAssessmentJustificationChange" data-args=\'' + _da(a.id, q.id) + '\' data-pass-value>' + esc(resp.justification || "") + '</textarea>';
         h += '</div>';
         h += '</div>';
     }
@@ -3369,15 +3547,16 @@ function _renderAnswerInput(assessId, q, resp) {
     return h;
 }
 
-function _renderActionPlanForm(assessId, qId, ap, api) {
+function _renderActionPlanForm(a, qId, ap, api) {
+    var assessId = a.id;
     var h = '<div style="background:white;border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px">';
     h += '<div style="display:flex;gap:6px;margin-bottom:6px">';
-    h += '<input type="text" value="' + esc(ap.title || "") + '" placeholder="' + esc(t("assessment.ap_title")) + '" style="flex:1;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "title") + '\' data-pass-value>';
+    h += '<input type="text" value="' + esc(ap.title || "") + '" placeholder="' + esc(_tk(a, "assessment.ap_title")) + '" style="flex:1;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "title") + '\' data-pass-value>';
     h += '<input type="date" value="' + esc(ap.target_date || "") + '" style="padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "target_date") + '\' data-pass-value>';
-    h += '<input type="text" value="' + esc(ap.owner || "") + '" placeholder="' + esc(t("assessment.ap_owner")) + '" style="width:120px;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "owner") + '\' data-pass-value>';
+    h += '<input type="text" value="' + esc(ap.owner || "") + '" placeholder="' + esc(_tk(a, "assessment.ap_owner")) + '" style="width:120px;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "owner") + '\' data-pass-value>';
     h += '<button class="tpl-icon-btn danger" data-click="_removeActionPlan" data-args=\'' + _da(assessId, qId, api) + '\' title="' + esc(t("common.delete")) + '">&times;</button>';
     h += '</div>';
-    h += '<textarea rows="2" placeholder="' + esc(t("assessment.ap_description")) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em;font-family:inherit;box-sizing:border-box;resize:vertical" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "description") + '\' data-pass-value>' + esc(ap.description || "") + '</textarea>';
+    h += '<textarea rows="2" placeholder="' + esc(_tk(a, "assessment.ap_description")) + '" style="width:100%;padding:4px 8px;border:1px solid var(--gray-light);border-radius:4px;font-size:0.85em;font-family:inherit;box-sizing:border-box;resize:vertical" data-input="_updateActionPlanField" data-args=\'' + _da(assessId, qId, api, "description") + '\' data-pass-value>' + esc(ap.description || "") + '</textarea>';
     h += '</div>';
     return h;
 }
@@ -3606,14 +3785,14 @@ function _refreshAssessmentLiveState(assessId, questionId) {
                 if (satisfied) {
                     banner.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#166534;font-size:0.82em;font-weight:600">'
                         + '<span>&#10003;</span>'
-                        + esc(hasAction ? t("assessment.action_recorded") : t("assessment.justification_recorded"))
+                        + esc(hasAction ? _tk(a, "assessment.action_recorded") : _tk(a, "assessment.justification_recorded"))
                         + '</div>';
                 } else {
                     banner.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">'
                         + '<span style="color:var(--orange);font-size:1.1em;line-height:1">&#9888;</span>'
                         + '<div>'
-                        + '<div style="font-size:0.85em;font-weight:700;color:#7c2d12">' + esc(t("assessment.action_required_title")) + '</div>'
-                        + '<div style="font-size:0.78em;color:#7c2d12;margin-top:2px">' + esc(resp.coverage === "partial" ? t("assessment.action_required_partial") : t("assessment.action_required_not_covered")) + '</div>'
+                        + '<div style="font-size:0.85em;font-weight:700;color:#7c2d12">' + esc(_tk(a, "assessment.action_required_title")) + '</div>'
+                        + '<div style="font-size:0.78em;color:#7c2d12;margin-top:2px">' + esc(resp.coverage === "partial" ? _tk(a, "assessment.action_required_partial") : _tk(a, "assessment.action_required_not_covered")) + '</div>'
                         + '</div>'
                         + '</div>';
                 }
