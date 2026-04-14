@@ -21,10 +21,6 @@
             <div class="toolbar-dropdown-sep"></div>
             <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["openFile"]' data-i18n="menu_open">Ouvrir</div>
             <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["saveJSON"]' data-i18n="menu_save_as">Enregistrer sous</div>
-            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["exportExcel"]' data-i18n="menu_export_excel">Exporter Excel</div>
-            <div class="toolbar-dropdown-sep"></div>
-            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["exportPP"]' data-i18n="pp.export_title">Export Risk</div>
-            <div class="toolbar-dropdown-item" data-click="_menuAction" data-args='["importPPFromRisk"]' data-i18n="pp.import_title">Import Risk</div>
         </div>
     </div>
     <span class="status" id="status-msg"></span>
@@ -40,11 +36,17 @@
     <div class="sidebar-item" data-click="selectPanel" data-args='["risks"]' data-i18n="nav.risks">Risques</div>
     <div class="sidebar-item" data-click="selectPanel" data-args='["measures"]' data-i18n="nav.measures">Mesures</div>
     <div class="sidebar-item" data-click="selectPanel" data-args='["documents"]' data-i18n="nav.documents">Documents</div>
-    <div class="sidebar-item" data-click="selectPanel" data-args='["templates"]' data-i18n="nav.templates">Templates</div>
+    <div class="sidebar-item" data-click="selectPanel" data-args='["templates"]' data-i18n="nav.templates">Modèles d'évaluation</div>
     <div class="flex-spacer"></div>
     <div class="sidebar-section" data-i18n="tprm.sidebar.section_aide">Aide</div>
     <div class="sidebar-item" data-click="toggleHelp" data-args='["methodo"]' data-i18n="tprm.sidebar.methodo">Methodologie</div>
     <div class="sidebar-item" data-click="toggleHelp" data-args='["usage"]' data-i18n="tprm.sidebar.usage">Utilisation</div>
+    <div class="sidebar-section" data-i18n="tprm.sidebar.section_historique">Historique</div>
+    <div class="sidebar-item" data-click="selectPanel" data-args='["history"]' data-i18n="tprm.sidebar.snapshots">Snapshots</div>
+    <div class="btn-group-sm">
+        <button id="btn-undo" class="btn-undo opacity-low" data-click="undo" data-i18n-title="btn_undo_title" title="Annuler (Ctrl+Z)">&#8630;</button>
+        <button id="btn-redo" class="btn-redo opacity-low" data-click="redo" data-i18n-title="btn_redo_title" title="Retablir (Ctrl+Y)">&#8631;</button>
+    </div>
     <a href="https://www.cisotoolbox.org" target="_blank" rel="noopener noreferrer" class="sidebar-brand">cisotoolbox.org</a>
 </nav>
 
@@ -55,7 +57,6 @@
 </div>
 
 <input type="file" id="file-input" accept=".json" style="display:none">
-<input type="file" id="risk-import-input" accept=".json" style="display:none" data-change="importRiskFile" data-pass-event>
 
 <!-- Panel d'aide -->
 <div class="help-overlay" id="help-overlay" data-click-self="toggleHelp">

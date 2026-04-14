@@ -49,6 +49,27 @@ function selectPanel(id) {
     renderPanel();
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Inline SVG icon set (Lucide-style). Returns a 1em-sized <svg>
+// that inherits currentColor, so callers can tint with CSS.
+// All paths use stroke-width:2, round caps/joins.
+// ═══════════════════════════════════════════════════════════════
+var _ICON_PATHS = {
+    "plus":        '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    "upload":      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+    "download":    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+    "clipboard":   '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
+    "shield":      '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
+    "pencil":      '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+    "copy":        '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    "trash":       '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>'
+};
+function _icon(name) {
+    var p = _ICON_PATHS[name];
+    if (!p) return "";
+    return '<svg class="ct-icon" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
+}
+
 function renderPanel() {
     var c = document.getElementById("content");
     _docsTableCounter = 0;
@@ -76,6 +97,10 @@ function renderPanel() {
         case "templates":
             if (_editingTemplateId) { c.innerHTML = renderTemplateEditor(_editingTemplateId); }
             else { c.innerHTML = renderTemplateList(); }
+            break;
+        case "history":
+            c.innerHTML = '<h2>' + t("tprm.history.title") + '</h2><p class="panel-desc">' + t("tprm.history.intro") + '</p><div id="history-content"></div>';
+            renderHistory();
             break;
         default: c.innerHTML = renderDashboard();
     }
@@ -520,7 +545,6 @@ function renderVendorList() {
     h += '<h2>' + t("vendor.title") + '</h2>';
     h += '<div style="display:flex;gap:8px">';
     h += '<button class="btn-add" data-click="addVendor">' + t("vendor.add") + '</button>';
-    h += '<button class="btn-add" style="background:var(--light-blue)" data-click="triggerImportRisk">' + t("vendor.import_risk") + '</button>';
     h += '</div></div>';
 
     // Search + filter bar
@@ -916,16 +940,19 @@ var _vrefCounter = 1000;
 function _renderVendorRisks(v) {
     if (!v.measures) v.measures = [];
     var risks = D.risks.filter(function(r) { return r.vendor_id === v.id; });
-    var h = '<div class="panel-desc" style="margin-bottom:10px;font-size:0.82em">' + t("risk.vendor_help") + '</div>';
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+    // Align header styling with the Assessments and Documents tabs:
+    // single flex row with the title count on the left and the action
+    // buttons on the right. The contextual help previously shown as a
+    // <p class="panel-desc"> is reachable from the sidebar Help item.
+    var h = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
     h += '<strong>' + t("risk.title") + ' (' + risks.length + ')</strong>';
-    h += '<div style="display:flex;gap:6px">';
+    h += '<span style="flex:1"></span>';
     if (typeof _aiIsEnabled === "function" && _aiIsEnabled()) {
-        h += '<button class="btn-add" style="background:var(--light-blue)" data-click="openAiRiskAssistant" data-args=\'' + _da(_selectedVendor) + '\'>&#129302; IA</button>';
+        h += '<button class="btn-add" style="font-size:0.78em;padding:3px 10px;background:var(--light-blue)" data-click="openAiRiskAssistant" data-args=\'' + _da(_selectedVendor) + '\'>&#129302; ' + t("ai.generate_risks") + '</button>';
     }
-    h += '<button class="btn-add" data-click="addRiskForVendor" data-args=\'' + _da(v.id) + '\'>' + t("risk.add") + '</button>';
-    h += '</div></div>';
-    if (!risks.length) return h + '<div style="color:var(--text-muted);font-size:0.85em">' + t("risk.empty") + '</div>';
+    h += '<button class="btn-add" style="font-size:0.78em;padding:3px 10px" data-click="addRiskForVendor" data-args=\'' + _da(v.id) + '\'>' + t("risk.add") + '</button>';
+    h += '</div>';
+    if (!risks.length) return h + '<div style="color:var(--text-muted);font-size:0.85em;margin-top:8px">' + t("risk.empty") + '</div>';
 
     // Split measures into "en place" (terminé) and "prévues" (planifié/en_cours)
     var measEnPlace = v.measures.filter(function(m) { return m.statut === "termine"; });
@@ -1066,10 +1093,14 @@ function _renderVendorRisks(v) {
     });
     h += '</tbody></table>';
 
-    // Measures registry below the risk table
+    // Measures registry below the risk table — use the same header style
+    // as the other vendor tabs (flex row, count next to title).
     if (v.measures.length > 0) {
         h += '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
-        h += '<strong style="font-size:0.85em">' + t("measure.registry") + ' (' + v.measures.length + ')</strong>';
+        h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
+        h += '<strong>' + t("measure.registry") + ' (' + v.measures.length + ')</strong>';
+        h += '<span style="flex:1"></span>';
+        h += '</div>';
         h += colsButton("vendor-measures-table");
         h += '<table id="vendor-measures-table" style="font-size:0.82em;margin-top:6px"><thead><tr>';
         h += '<th' + hd("id") + ' style="width:70px">ID</th><th' + hd("mesure") + '>' + t("measure.col_mesure") + '</th><th' + hd("type") + '>' + t("measure.col_type") + '</th>';
@@ -2105,11 +2136,10 @@ function _computeAssessmentScore(a, questions) {
 
 function deleteAssessment(assessId) {
     if (!confirm(t("assessment.confirm_delete"))) return;
-    _saveState();
     var idx = D.assessments.findIndex(function(a) { return a.id === assessId; });
     if (idx < 0) return;
     D.assessments.splice(idx, 1);
-    _autoSave();
+    _autoSave(); // _autoSave hook handles the undo-stack push
     renderPanel();
     showStatus(t("assessment.deleted"));
 }
@@ -2512,7 +2542,10 @@ window.backToVendors = backToVendors;
 
 var _editingTemplateId = null;
 
-var QUESTION_TYPES = ["yes_no", "scale_1_5", "single_choice", "multi_choice", "free_text", "file_upload"];
+// Templates only support free_text questions now. The constant is kept
+// for backwards compat and documentation; the editor no longer exposes
+// a dropdown and the legacy types are healed to free_text at load time.
+var QUESTION_TYPES = ["free_text"];
 var CRITICALITY_LEVELS = ["info", "major", "blocker"];
 var TEMPLATE_KINDS = ["questionnaire", "audit"];
 
@@ -2589,10 +2622,17 @@ function _ensureDefaultTemplate() {
     // Heal any existing templates:
     // - section-scoped IDs (pre-fix) may cause duplicate question ids
     // - missing `kind` field → default to "questionnaire"
+    // - legacy question types → free_text (only supported type now)
     var healed = false;
     D.questionnaire_templates.forEach(function(tpl) {
         if (_normalizeTemplateQuestionIds(tpl)) healed = true;
         if (!tpl.kind) { tpl.kind = "questionnaire"; healed = true; }
+        (tpl.sections || []).forEach(function(s) {
+            (s.questions || []).forEach(function(q) {
+                if (q.type !== "free_text") { q.type = "free_text"; healed = true; }
+                if (q.options && q.options.length) { q.options = []; healed = true; }
+            });
+        });
     });
     // Heal maturity_config on projects created before phase 0 / step 4
     if (!D.maturity_config) {
@@ -2809,8 +2849,12 @@ function renderTemplateList() {
     var h = '<div class="tpl-header">';
     h += '<h2>' + t("template.title") + '</h2>';
     h += '<span style="flex:1"></span>';
-    h += '<button class="btn-add" data-click="createTemplate" data-args=\'["questionnaire"]\'>' + t("template.new_questionnaire") + '</button>';
-    h += '<button class="btn-add" style="background:var(--violet)" data-click="createTemplate" data-args=\'["audit"]\'>' + t("template.new_audit") + '</button>';
+    h += '<div class="tpl-header-actions">';
+    h += '<button class="tpl-header-btn tpl-header-btn--primary" data-click="createTemplate" data-args=\'["questionnaire"]\'>' + _icon("plus") + '<span>' + t("template.new_questionnaire_short") + '</span></button>';
+    h += '<button class="tpl-header-btn tpl-header-btn--violet" data-click="createTemplate" data-args=\'["audit"]\'>' + _icon("plus") + '<span>' + t("template.new_audit_short") + '</span></button>';
+    h += '<button class="tpl-header-btn tpl-header-btn--ghost" data-click="importTemplateFromExcel" title="' + esc(t("template.import_excel_hint")) + '">' + _icon("upload") + '<span>' + t("template.import_excel") + '</span></button>';
+    h += '<button class="tpl-header-btn tpl-header-btn--ghost" data-click="downloadTemplateExcelExample" title="' + esc(t("template.download_example_hint")) + '">' + _icon("download") + '<span>' + t("template.download_example") + '</span></button>';
+    h += '</div>';
     h += '</div>';
     h += '<p class="panel-desc">' + t("template.intro") + '</p>';
 
@@ -2822,9 +2866,9 @@ function renderTemplateList() {
         var kind = tpl.kind || "questionnaire";
         var qCount = (tpl.sections || []).reduce(function(acc, s) { return acc + (s.questions || []).length; }, 0);
         var sCount = (tpl.sections || []).length;
-        var icon = kind === "audit" ? "&#x1F50D;" : "&#x1F4CB;"; // 🔍 vs 📋
+        var kindIcon = kind === "audit" ? _icon("shield") : _icon("clipboard");
         h += '<div class="tpl-card">';
-        h += '<div class="tpl-card-icon tpl-icon-' + kind + '">' + icon + '</div>';
+        h += '<div class="tpl-card-icon tpl-icon-' + kind + '">' + kindIcon + '</div>';
         h += '<div class="tpl-card-body">';
         h += '<div class="tpl-card-name">' + esc(tpl.name || "") + '  <span class="tpl-kind-badge tpl-kind-' + kind + '">' + esc(t("template.kind_" + kind)) + '</span></div>';
         h += '<div class="tpl-card-desc">' + esc(tpl.description || tpl.id) + '</div>';
@@ -2836,9 +2880,9 @@ function renderTemplateList() {
         h += '<span>v' + (tpl.version || 1) + '</span>';
         h += '</div>';
         h += '<div class="tpl-card-actions">';
-        h += '<button class="tpl-icon-btn" data-click="editTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.edit")) + '" data-tooltip="' + esc(t("common.edit")) + '" aria-label="' + esc(t("common.edit")) + '">&#x270E;</button>';
-        h += '<button class="tpl-icon-btn" data-click="duplicateTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.duplicate")) + '" data-tooltip="' + esc(t("common.duplicate")) + '" aria-label="' + esc(t("common.duplicate")) + '">&#x2398;</button>';
-        h += '<button class="tpl-icon-btn danger" data-click="deleteTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.delete")) + '" data-tooltip="' + esc(t("common.delete")) + '" aria-label="' + esc(t("common.delete")) + '">&#x1F5D1;</button>';
+        h += '<button class="tpl-icon-btn" data-click="editTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.edit")) + '" data-tooltip="' + esc(t("common.edit")) + '" aria-label="' + esc(t("common.edit")) + '">' + _icon("pencil") + '</button>';
+        h += '<button class="tpl-icon-btn" data-click="duplicateTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.duplicate")) + '" data-tooltip="' + esc(t("common.duplicate")) + '" aria-label="' + esc(t("common.duplicate")) + '">' + _icon("copy") + '</button>';
+        h += '<button class="tpl-icon-btn danger" data-click="deleteTemplate" data-args=\'' + _da(tpl.id) + '\' title="' + esc(t("common.delete")) + '" data-tooltip="' + esc(t("common.delete")) + '" aria-label="' + esc(t("common.delete")) + '">' + _icon("trash") + '</button>';
         h += '</div>';
         h += '</div>';
     });
@@ -2986,14 +3030,10 @@ function _renderTemplateSection(tpl, section, si, total) {
 
 function _renderTemplateQuestion(tpl, section, q, qi, total) {
     var h = '<div class="tpl-question">';
-    // Header row: id + type + criticality + weight + controls
+    // Header row: id + criticality + weight + controls
+    // Type dropdown removed — only free_text is supported now.
     h += '<div class="tpl-question-header">';
     h += '<span class="tpl-question-id">' + esc(q.id) + '</span>';
-    h += '<select data-change="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "type") + '\' data-pass-value>';
-    QUESTION_TYPES.forEach(function(ty) {
-        h += '<option value="' + ty + '"' + (q.type === ty ? " selected" : "") + '>' + esc(t("qtype." + ty)) + '</option>';
-    });
-    h += '</select>';
     var critClass = "tpl-criticality crit-" + (q.criticality || "major");
     h += '<select class="' + critClass + '" data-change="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "criticality") + '\' data-pass-value>';
     CRITICALITY_LEVELS.forEach(function(cr) {
@@ -3012,19 +3052,6 @@ function _renderTemplateQuestion(tpl, section, q, qi, total) {
     h += '<textarea class="tpl-question-text" rows="2" placeholder="' + esc(t("template.question_text")) + '" data-input="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "text") + '\' data-pass-value>' + esc(q.text || "") + '</textarea>';
     // Expected answer / evidence
     h += '<textarea class="tpl-question-expected" rows="1" placeholder="' + esc(t("template.question_expected")) + '" data-input="_onQuestionFieldChange" data-args=\'' + _da(tpl.id, section.id, q.id, "expected") + '\' data-pass-value>' + esc(q.expected || "") + '</textarea>';
-    // Options editor for choice types
-    if (q.type === "single_choice" || q.type === "multi_choice") {
-        h += '<div class="tpl-question-options">';
-        h += '<div class="tpl-question-options-label">' + t("template.options") + '</div>';
-        (q.options || []).forEach(function(opt, oi) {
-            h += '<div class="tpl-question-option">';
-            h += '<input type="text" value="' + esc(opt) + '" data-input="_onOptionChange" data-args=\'' + _da(tpl.id, section.id, q.id, oi) + '\' data-pass-value>';
-            h += '<button class="tpl-icon-btn danger" data-click="deleteOption" data-args=\'' + _da(tpl.id, section.id, q.id, oi) + '\' title="' + esc(t("common.delete")) + '">&times;</button>';
-            h += '</div>';
-        });
-        h += '<button class="btn-add" style="font-size:0.75em;padding:3px 10px;margin-top:4px" data-click="addOption" data-args=\'' + _da(tpl.id, section.id, q.id) + '\'>+ ' + t("template.add_option") + '</button>';
-        h += '</div>';
-    }
     h += '</div>';
     return h;
 }
@@ -3393,6 +3420,12 @@ function openAssessmentV2(assessId) {
     // Actions toolbar
     h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
     h += '<button class="btn-add" data-click="_exportAssessmentJSON" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.export_json")) + '</button>';
+    // Portal link only makes sense for questionnaires sent to vendors.
+    // For audits the auditor fills the questionnaire with their own tools,
+    // so the link flow does not apply.
+    if (kind !== "audit") {
+        h += '<button class="btn-add" style="background:var(--violet)" data-click="_exportAssessmentLink" data-args=\'' + _da(a.id) + '\'>' + esc(t("assessment.export_link")) + '</button>';
+    }
     h += '<button class="btn-add" data-click="_exportAssessmentExcel" data-args=\'' + _da(a.id) + '\'>' + esc(_tk(a, "assessment.export_excel")) + '</button>';
     h += '<button class="btn-add" data-click="_importAssessmentIntoExisting" data-args=\'' + _da(a.id) + '\'>' + esc(_tk(a, "assessment.import_response")) + '</button>';
     h += '<span style="flex:1"></span>';
@@ -3532,51 +3565,11 @@ function _renderAssessmentQuestion(a, section, q, resp) {
 }
 
 function _renderAnswerInput(assessId, q, resp) {
-    var h = '';
+    // Templates only carry free_text questions now. We keep this function
+    // because it is still called once per question; rendering a textarea
+    // is the only path.
     var val = resp.answer;
-    if (q.type === "yes_no") {
-        h += '<div class="answer-pills">';
-        ["yes", "no"].forEach(function(yn) {
-            var sel = val === yn ? " selected" : "";
-            h += '<div class="answer-pill' + sel + '" data-click="_setAnswerV2" data-args=\'' + _da(assessId, q.id, yn) + '\'>' + esc(t("answer." + yn)) + '</div>';
-        });
-        h += '</div>';
-    } else if (q.type === "scale_1_5") {
-        h += '<div class="answer-pills">';
-        [1, 2, 3, 4, 5].forEach(function(n) {
-            var sel = Number(val) === n ? " selected" : "";
-            h += '<div class="answer-pill' + sel + '" data-click="_setAnswerV2" data-args=\'' + _da(assessId, q.id, n) + '\'>' + n + '</div>';
-        });
-        h += '</div>';
-    } else if (q.type === "single_choice") {
-        h += '<div class="answer-pills" style="flex-wrap:wrap">';
-        (q.options || []).forEach(function(opt) {
-            var sel = val === opt ? " selected" : "";
-            h += '<div class="answer-pill' + sel + '" data-click="_setAnswerV2" data-args=\'' + _da(assessId, q.id, opt) + '\'>' + esc(opt) + '</div>';
-        });
-        h += '</div>';
-    } else if (q.type === "multi_choice") {
-        var arr = Array.isArray(val) ? val : [];
-        h += '<div class="answer-pills" style="flex-wrap:wrap">';
-        (q.options || []).forEach(function(opt) {
-            var sel = arr.indexOf(opt) >= 0 ? " selected" : "";
-            h += '<div class="answer-pill' + sel + '" data-click="_toggleAnswerMulti" data-args=\'' + _da(assessId, q.id, opt) + '\'>' + esc(opt) + '</div>';
-        });
-        h += '</div>';
-    } else if (q.type === "free_text") {
-        h += '<textarea rows="3" class="tpl-question-text" placeholder="' + esc(t("assessment.your_answer")) + '" data-input="_setAnswerV2Text" data-args=\'' + _da(assessId, q.id) + '\' data-pass-value>' + esc(val || "") + '</textarea>';
-    } else if (q.type === "file_upload") {
-        if (val && val.name) {
-            h += '<div style="font-size:0.85em;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;gap:8px">';
-            h += '<span>&#x1F4CE;</span><span style="flex:1">' + esc(val.name) + '</span>';
-            h += '<span style="color:var(--gray-dark);font-size:0.82em">' + Math.round((val.size || 0) / 1024) + ' Ko</span>';
-            h += '<button class="tpl-icon-btn danger" data-click="_clearAnswerFile" data-args=\'' + _da(assessId, q.id) + '\'>&times;</button>';
-            h += '</div>';
-        } else {
-            h += '<input type="file" data-change="_uploadAnswerFile" data-args=\'' + _da(assessId, q.id) + '\' data-pass-el style="font-size:0.85em">';
-        }
-    }
-    return h;
+    return '<textarea rows="3" class="tpl-question-text" placeholder="' + esc(t("assessment.your_answer")) + '" data-input="_setAnswerV2Text" data-args=\'' + _da(assessId, q.id) + '\' data-pass-value>' + esc(val || "") + '</textarea>';
 }
 
 function _renderActionPlanForm(a, qId, ap, api) {
@@ -4289,21 +4282,47 @@ function _buildExportPayload(a) {
 function _exportAssessmentJSON(assessId) {
     var a = _findAssessment(assessId);
     if (!a) return;
-    var payload = _buildExportPayload(a);
-    var json = JSON.stringify(payload, null, 2);
 
     _showModal(
         '<h3>' + esc(t("assessment.export_json_title")) + '</h3>' +
-        '<p style="font-size:0.85em;color:var(--gray-dark);margin-bottom:10px">' + esc(t("assessment.export_json_hint")) + '</p>' +
-        '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.encryption_password")) + '</label>' +
-        '<input type="password" id="exp-password" placeholder="' + esc(t("assessment.encryption_password_hint")) + '" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:10px">' +
-        '<div style="display:flex;gap:8px">' +
-        '<button class="btn-add" style="flex:1" data-click="_doExportJSON" data-args=\'' + _da(assessId, false) + '\'>' + esc(t("assessment.export_plain")) + '</button>' +
-        '<button class="btn-add" style="flex:1;background:var(--light-blue)" data-click="_doExportJSON" data-args=\'' + _da(assessId, true) + '\'>' + esc(t("assessment.export_encrypted")) + '</button>' +
+        '<p style="font-size:0.85em;color:var(--gray-dark);margin-bottom:14px">' + esc(t("assessment.export_json_file_hint")) + '</p>' +
+
+        '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.encryption_password_label_optional")) + '</label>' +
+        '<input type="password" id="exp-password" placeholder="' + esc(t("assessment.encryption_password_optional")) + '" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:14px">' +
+
+        '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn-add" style="background:var(--gray-light);color:var(--text)" data-click="closeModal">' + esc(t("common.cancel")) + '</button>' +
+        '<button class="btn-add" style="background:var(--light-blue)" data-click="_doExportJSONAuto" data-args=\'' + _da(assessId) + '\'>' + esc(t("assessment.export")) + '</button>' +
         '</div>'
     );
 }
 window._exportAssessmentJSON = _exportAssessmentJSON;
+
+// Unified export: reads the optional password and picks plain vs encrypted.
+function _doExportJSONAuto(assessId) {
+    var pwd = (document.getElementById("exp-password") || {}).value || "";
+    _doExportJSON(assessId, !!pwd);
+}
+window._doExportJSONAuto = _doExportJSONAuto;
+
+// Dedicated modal for generating a portal link.
+function _exportAssessmentLink(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+
+    _showModal(
+        '<h3>' + esc(t("assessment.export_link_title")) + '</h3>' +
+        '<p style="font-size:0.85em;color:var(--gray-dark);margin-bottom:14px">' + esc(t("assessment.export_link_hint")) + '</p>' +
+
+        '<label style="display:block;font-size:0.78em;font-weight:600;margin-bottom:3px">' + esc(t("assessment.encryption_password_label_required")) + '</label>' +
+        '<input type="password" id="exp-password" placeholder="' + esc(t("assessment.encryption_password_required")) + '" style="width:100%;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:inherit;margin-bottom:10px">' +
+
+        '<button class="btn-add" style="width:100%;background:var(--violet)" data-click="_generatePortalLink" data-args=\'' + _da(assessId) + '\'>' + esc(t("assessment.generate_link")) + '</button>' +
+
+        '<div id="exp-link-result" style="margin-top:12px;display:none"></div>'
+    );
+}
+window._exportAssessmentLink = _exportAssessmentLink;
 
 function _doExportJSON(assessId, encrypted) {
     var a = _findAssessment(assessId);
@@ -4329,6 +4348,202 @@ function _doExportJSON(assessId, encrypted) {
     }
 }
 window._doExportJSON = _doExportJSON;
+
+// ═══════════════════════════════════════════════════════════════
+// PORTAL LINK GENERATION
+// ═══════════════════════════════════════════════════════════════
+//
+// Builds a compact self-contained URL that the vendor can click to
+// open the portal with the questionnaire pre-loaded. The payload is:
+//   1. JSON-stringified,
+//   2. gzip-compressed via CompressionStream (or lz-string fallback),
+//   3. AES-256-GCM encrypted using the operator's password,
+//   4. base64url-encoded and placed in the URL fragment (#data=...).
+//
+// The password is never embedded in the link — the operator shares
+// it out-of-band (SMS, voice, messenger, separate email).
+//
+// Size thresholds:
+//   - <=  8 000 chars  → green  "compatible with every email client"
+//   - <= 12 000 chars  → orange "may be truncated by legacy Outlook"
+//   - >  12 000 chars  → red    "too long — switch to encrypted file"
+// ═══════════════════════════════════════════════════════════════
+
+var LINK_SIZE_GREEN = 8000;
+var LINK_SIZE_YELLOW = 12000;
+
+async function _gzipCompress(text) {
+    if (typeof CompressionStream === "undefined") {
+        // Very old browsers: just skip compression
+        return new TextEncoder().encode(text);
+    }
+    var stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+    var buf = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buf);
+}
+
+function _bytesToBase64(bytes) {
+    var binary = "";
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+}
+
+function _bytesToBase64Url(bytes) {
+    return _bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// Builds the URL that should open the portal at the same origin / path.
+function _portalBaseURL() {
+    var loc = window.location;
+    // window.location.pathname may end with /index.html or /.
+    // We want the current folder + "portal/".
+    var folder = loc.pathname.replace(/\/[^/]*$/, "/"); // keep trailing /
+    return loc.origin + folder + "portal/";
+}
+
+async function _generatePortalLink(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var pwd = (document.getElementById("exp-password") || {}).value || "";
+    if (!pwd) { alert(t("assessment.password_required")); return; }
+
+    var payload = _buildExportPayload(a);
+    var json = JSON.stringify(payload);
+
+    try {
+        // 1. compress
+        var compressed = await _gzipCompress(json);
+        // 2. base64-encode the compressed bytes so the AES plaintext is
+        //    pure ASCII (no UTF-8 round-trip surprises on binary bytes).
+        var compressedB64 = _bytesToBase64(compressed);
+        // 3. encrypt the ASCII-safe payload
+        var enc = await _encryptData(compressedB64, pwd);
+        // 4. base64url the final ciphertext
+        var b64 = _bytesToBase64Url(enc);
+        // 5. build URL with a version tag so the portal knows how to
+        //    decode (v1gz = base64(gzip(json)) then encrypted).
+        var url = _portalBaseURL() + "#data=v1gz." + b64;
+
+        // Compute thresholds
+        var size = url.length;
+        var statusKey, statusColor, statusBg;
+        if (size <= LINK_SIZE_GREEN) {
+            statusKey = "assessment.link_status_green";
+            statusColor = "#166534";
+            statusBg = "#ecfdf5";
+        } else if (size <= LINK_SIZE_YELLOW) {
+            statusKey = "assessment.link_status_yellow";
+            statusColor = "#7c2d12";
+            statusBg = "#fff7ed";
+        } else {
+            statusKey = "assessment.link_status_red";
+            statusColor = "#7f1d1d";
+            statusBg = "#fee2e2";
+        }
+
+        var resultEl = document.getElementById("exp-link-result");
+        if (!resultEl) return;
+        var h = '<div style="background:' + statusBg + ';border:1px solid ' + statusColor + ';border-radius:6px;padding:10px 12px;color:' + statusColor + '">';
+        h += '<div style="font-size:0.78em;font-weight:700;margin-bottom:4px">' + esc(t(statusKey)) + '</div>';
+        h += '<div style="font-size:0.72em">' + esc(t("assessment.link_size")) + ': ' + size.toLocaleString() + ' ' + esc(t("assessment.chars")) + '</div>';
+        h += '</div>';
+        // Link + copy buttons
+        h += '<div style="display:flex;gap:6px;margin-top:10px">';
+        h += '<input type="text" id="exp-link-url" readonly value="' + esc(url) + '" style="flex:1;padding:6px 10px;border:1px solid var(--gray-light);border-radius:4px;font-family:ui-monospace,monospace;font-size:0.78em">';
+        h += '<button class="btn-add" style="margin:0" data-click="_copyPortalLink">' + esc(t("assessment.copy_link")) + '</button>';
+        h += '</div>';
+        h += '<button class="btn-add" style="margin-top:8px;background:var(--light-blue)" data-click="_copyEmailTemplate" data-args=\'' + _da(assessId) + '\'>' + esc(t("assessment.copy_email_template")) + '</button>';
+        h += '<p style="font-size:0.72em;color:var(--gray-dark);margin-top:10px">' + esc(t("assessment.link_password_hint")) + '</p>';
+        resultEl.innerHTML = h;
+        resultEl.style.display = "block";
+    } catch (e) {
+        console.error("Link generation failed:", e);
+        alert("Link generation failed: " + (e && e.message ? e.message : e));
+    }
+}
+window._generatePortalLink = _generatePortalLink;
+
+function _copyPortalLink() {
+    var el = document.getElementById("exp-link-url");
+    if (!el) return;
+    el.select();
+    try {
+        navigator.clipboard.writeText(el.value).then(function() {
+            showStatus(t("assessment.link_copied"));
+        });
+    } catch (e) {
+        document.execCommand("copy");
+        showStatus(t("assessment.link_copied"));
+    }
+}
+window._copyPortalLink = _copyPortalLink;
+
+function _copyEmailTemplate(assessId) {
+    var a = _findAssessment(assessId);
+    if (!a) return;
+    var el = document.getElementById("exp-link-url");
+    if (!el) return;
+    var link = el.value;
+    var tpl = _getAssessmentTemplate(a);
+    var vendorName = _vendorName(a.vendor_id);
+    var templateName = tpl ? tpl.name : "";
+    var dueDate = a.due_date || "-";
+    var subject = t("assessment.email_subject").replace("{vendor}", vendorName);
+    var bodyTemplate = t("assessment.email_body")
+        .replace("{template}", templateName)
+        .replace("{due_date}", dueDate);
+
+    // Plain text version (fallback): the link appears as raw URL
+    var plainBody = bodyTemplate.replace("{link}", link);
+    var plainClipboard = subject + "\n\n" + plainBody;
+
+    // HTML version: the link appears as an actual clickable hyperlink
+    // with a visible label ("Ouvrir le questionnaire"). Most email
+    // clients that accept a paste (Outlook Desktop, Gmail Web,
+    // Thunderbird, Apple Mail, New Outlook) preserve the anchor.
+    // Build order matters:
+    //   1. Replace {link} with a unique placeholder that won't appear in
+    //      the body and won't be mangled by HTML escaping.
+    //   2. Escape the entire body.
+    //   3. Wrap lines in <p> or <br>.
+    //   4. Substitute the placeholder with the real <a href="...">.
+    var PLACEHOLDER = "\u0001LINK\u0001";
+    var htmlSource = bodyTemplate.replace("{link}", PLACEHOLDER);
+    var anchor = '<a href="' + esc(link) + '">' + esc(t("assessment.email_link_label")) + '</a>';
+    var htmlBody = esc(htmlSource)
+        .split("\n")
+        .map(function(line) { return line === "" ? "<br>" : "<p style=\"margin:0 0 8px\">" + line + "</p>"; })
+        .join("")
+        .replace(PLACEHOLDER, anchor);
+    var htmlClipboard =
+        '<p style="margin:0 0 10px;font-weight:bold">' + esc(subject) + '</p>' +
+        htmlBody;
+
+    // Try the rich-text path first (two MIME types); fall back to plain.
+    try {
+        if (typeof ClipboardItem !== "undefined" && navigator.clipboard && navigator.clipboard.write) {
+            var item = new ClipboardItem({
+                "text/plain": new Blob([plainClipboard], { type: "text/plain" }),
+                "text/html":  new Blob([htmlClipboard],  { type: "text/html"  })
+            });
+            navigator.clipboard.write([item]).then(function() {
+                showStatus(t("assessment.email_template_copied"));
+            }).catch(function() {
+                // Safari / Firefox may reject ClipboardItem → fall back
+                navigator.clipboard.writeText(plainClipboard).then(function() {
+                    showStatus(t("assessment.email_template_copied"));
+                });
+            });
+            return;
+        }
+        navigator.clipboard.writeText(plainClipboard).then(function() {
+            showStatus(t("assessment.email_template_copied"));
+        });
+    } catch (e) {
+        showStatus(t("assessment.email_template_copied"));
+    }
+}
+window._copyEmailTemplate = _copyEmailTemplate;
 
 function _triggerDownload(blob, filename) {
     var url = URL.createObjectURL(blob);
@@ -4371,17 +4586,15 @@ function _exportAssessmentExcel(assessId) {
         ].forEach(function(line) { ws1.addRow([line]); });
         ws1.getRow(1).font = { bold: true, size: 14 };
 
-        // Sheet 2: Questionnaire
+        // Sheet 2: Questionnaire (simplified — only free_text questions)
         var ws2 = wb.addWorksheet(t("assessment.questionnaire_sheet"));
         ws2.columns = [
             { header: "ID", key: "id", width: 10 },
             { header: t("assessment.col_section"), key: "section", width: 22 },
             { header: t("assessment.col_question"), key: "question", width: 50 },
-            { header: t("assessment.col_type"), key: "type", width: 14 },
-            { header: t("assessment.col_options"), key: "options", width: 30 },
             { header: t("assessment.col_expected"), key: "expected", width: 40 },
-            { header: t("assessment.col_answer"), key: "answer", width: 30 },
-            { header: t("assessment.col_coverage"), key: "coverage", width: 14 },
+            { header: t("assessment.col_answer"), key: "answer", width: 40 },
+            { header: t("assessment.col_coverage"), key: "coverage", width: 16 },
             { header: t("assessment.col_comment"), key: "comment", width: 30 },
             { header: t("assessment.col_ap_title"), key: "ap_title", width: 30 },
             { header: t("assessment.col_ap_desc"), key: "ap_desc", width: 30 },
@@ -4389,22 +4602,28 @@ function _exportAssessmentExcel(assessId) {
             { header: t("assessment.col_ap_owner"), key: "ap_owner", width: 20 },
             { header: t("assessment.col_justification"), key: "justification", width: 30 }
         ];
-        ws2.getRow(1).font = { bold: true };
+        // Header style: dark navy background, bold white text, frozen first row
         ws2.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
         ws2.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+        ws2.getRow(1).alignment = { vertical: "middle" };
+        ws2.views = [{ state: "frozen", ySplit: 1 }];
 
-        // Column indices (1-based) for data validation targeting
-        var COL_TYPE = 4;
-        var COL_ANSWER = 7;
-        var COL_COVERAGE = 8;
+        // Column indices (1-based)
+        var COL_ID = 1;
+        var COL_SECTION = 2;
+        var COL_QUESTION = 3;
+        var COL_EXPECTED = 4;
+        var COL_ANSWER = 5;
+        var COL_COVERAGE = 6;
+        var COL_COMMENT = 7;
+        var COL_AP_TITLE = 8;
+        var COL_AP_DESC = 9;
+        var COL_AP_DATE = 10;
+        var COL_AP_OWNER = 11;
+        var COL_JUSTIFICATION = 12;
 
-        // Shared coverage values — kept as internal identifiers so the import
-        // path (_normalizeCoverage) recognizes them in any locale.
         var COVERAGE_OPTIONS = ["covered", "partial", "not_covered", "not_applicable"];
 
-        // Apply a list validation on a cell. ExcelJS requires the formula
-        // syntax: `'"a,b,c"'` (outer single quotes, inner double quotes, no
-        // spaces). Commas separate values.
         function _setListValidation(cell, values, errorMsg) {
             cell.dataValidation = {
                 type: "list",
@@ -4417,7 +4636,15 @@ function _exportAssessmentExcel(assessId) {
             };
         }
 
-        var rowIdx = 1; // header row is 1
+        // Lock the question metadata columns (id, section, question, expected)
+        // — those are filled by the client and must not be edited by the
+        // vendor. We do not enable sheet protection (would require a
+        // password); the locked attribute simply communicates intent.
+        function _lockCell(cell) {
+            cell.protection = { locked: true };
+            cell.font = Object.assign({}, cell.font, { color: { argb: "FF1E293B" } });
+        }
+
         (tpl.sections || []).forEach(function(section) {
             (section.questions || []).forEach(function(q) {
                 var r = _findAssessmentResp(a, q.id) || {};
@@ -4430,8 +4657,6 @@ function _exportAssessmentExcel(assessId) {
                     id: q.id,
                     section: section.title,
                     question: q.text,
-                    type: q.type,
-                    options: (q.options || []).join(" | "),
                     expected: q.expected || "",
                     answer: answerStr,
                     coverage: r.coverage || "",
@@ -4442,39 +4667,89 @@ function _exportAssessmentExcel(assessId) {
                     ap_owner: firstAp.owner || "",
                     justification: r.justification || ""
                 });
-                rowIdx++;
+                row.alignment = { vertical: "top", wrapText: true };
 
-                // 1. Coverage dropdown — same for every question
+                // Lock metadata columns
+                _lockCell(row.getCell(COL_ID));
+                _lockCell(row.getCell(COL_SECTION));
+                _lockCell(row.getCell(COL_QUESTION));
+                _lockCell(row.getCell(COL_EXPECTED));
+
+                // Coverage dropdown — every row gets the same list
                 _setListValidation(row.getCell(COL_COVERAGE), COVERAGE_OPTIONS);
 
-                // 2. Type column — lock it, it's metadata filled by the app
-                row.getCell(COL_TYPE).protection = { locked: true };
-                row.getCell(COL_TYPE).font = { color: { argb: "FF64748B" } };
-
-                // 3. Answer column — type-dependent validation
-                var answerCell = row.getCell(COL_ANSWER);
-                if (q.type === "yes_no") {
-                    _setListValidation(answerCell, ["yes", "no"]);
-                } else if (q.type === "scale_1_5") {
-                    _setListValidation(answerCell, ["1", "2", "3", "4", "5"]);
-                } else if (q.type === "single_choice" && q.options && q.options.length) {
-                    // Excel list validation has a ~255 char limit on the
-                    // inline formula; skip validation if options exceed it.
-                    var joined = q.options.join(",");
-                    if (joined.length <= 250 && q.options.every(function(o) { return o.indexOf(",") < 0; })) {
-                        _setListValidation(answerCell, q.options);
-                    }
-                }
-                // multi_choice / free_text / file_upload → no validation
-                //   - multi_choice: free-form "value1; value2" so the user can
-                //     tick multiple options in one cell
-                //   - free_text: free input
-                //   - file_upload: file name written as text
-
-                // 4. ap_date target date — format as date
-                row.getCell(12).numFmt = "yyyy-mm-dd"; // ap_date column
+                // Date format on ap_date
+                row.getCell(COL_AP_DATE).numFmt = "yyyy-mm-dd";
             });
         });
+
+        // Conditional formatting: highlight ap_title and justification cells
+        // when coverage is "partial" or "not_covered" AND both fields are
+        // empty. The formula uses ISBLANK() and absolute column references on
+        // the coverage column ($F = 6th column) so each row evaluates
+        // independently.
+        var lastRow = ws2.rowCount;
+        if (lastRow > 1) {
+            var coverageColLetter = "F"; // 6th column
+            var apTitleColLetter = "H";  // 8th column
+            var justColLetter = "L";     // 12th column
+
+            // Range covering ap_title cells from row 2 to lastRow
+            var apTitleRange = apTitleColLetter + "2:" + apTitleColLetter + lastRow;
+            var justRange = justColLetter + "2:" + justColLetter + lastRow;
+
+            // Formula: TRUE when coverage ∈ {partial, not_covered} AND both
+            // ap_title (H) and justification (L) are blank on the same row.
+            // The reference uses $F2 (relative row, fixed column) so Excel
+            // re-evaluates per row.
+            var needAction = 'AND(OR($' + coverageColLetter + '2="partial",$' + coverageColLetter + '2="not_covered"),'
+                + 'TRIM($' + apTitleColLetter + '2)="",'
+                + 'TRIM($' + justColLetter + '2)="")';
+
+            ws2.addConditionalFormatting({
+                ref: apTitleRange + " " + justRange,
+                rules: [
+                    {
+                        type: "expression",
+                        formulae: [needAction],
+                        style: {
+                            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } },
+                            font: { color: { argb: "FF7F1D1D" }, bold: true },
+                            border: {
+                                left:   { style: "thin", color: { argb: "FFB91C1C" } },
+                                right:  { style: "thin", color: { argb: "FFB91C1C" } },
+                                top:    { style: "thin", color: { argb: "FFB91C1C" } },
+                                bottom: { style: "thin", color: { argb: "FFB91C1C" } }
+                            }
+                        }
+                    }
+                ]
+            });
+
+            // Bonus: also highlight the coverage cell itself in green when
+            // it is "covered" or "not_applicable" (visual confirmation).
+            ws2.addConditionalFormatting({
+                ref: coverageColLetter + "2:" + coverageColLetter + lastRow,
+                rules: [
+                    {
+                        type: "expression",
+                        formulae: ['OR($' + coverageColLetter + '2="covered",$' + coverageColLetter + '2="not_applicable")'],
+                        style: {
+                            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFD1FAE5" } },
+                            font: { color: { argb: "FF065F46" } }
+                        }
+                    },
+                    {
+                        type: "expression",
+                        formulae: ['OR($' + coverageColLetter + '2="partial",$' + coverageColLetter + '2="not_covered")'],
+                        style: {
+                            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } },
+                            font: { color: { argb: "FF92400E" } }
+                        }
+                    }
+                ]
+            });
+        }
 
         // Sheet 3: Self validation
         var ws3 = wb.addWorksheet(t("assessment.self_validation_sheet"));
@@ -4533,15 +4808,19 @@ function _pickAssessmentFile(existingAssessId, vendorId) {
 }
 
 function _promptPasswordAndDecrypt(file, onSuccess) {
-    var pwd = prompt(t("assessment.decryption_password"));
-    if (pwd === null) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        _decryptData(e.target.result, pwd).then(onSuccess).catch(function() {
-            alert(t("assessment.decryption_failed"));
-        });
-    };
-    reader.readAsArrayBuffer(file);
+    // Use the masked-input modal (#pwd-overlay) from cisotoolbox.js
+    // instead of window.prompt(), which would show the password in plain
+    // text. Falls back to native prompt if the overlay is not present.
+    _promptPassword(t("assessment.decryption_password")).then(function(pwd) {
+        if (pwd === null || pwd === undefined) return;
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            _decryptData(e.target.result, pwd).then(onSuccess).catch(function() {
+                alert(t("assessment.decryption_failed"));
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    });
 }
 
 function _handleImportedJSON(text, existingAssessId, vendorId) {
@@ -4750,6 +5029,230 @@ function _handleImportedExcel(file, existingAssessId, vendorId) {
     }).catch(function(err) {
         console.error("ExcelJS load failed:", err);
         alert(t("assessment.invalid_excel"));
+    });
+}
+
+// ── Template Excel: download example + import ────────────────────
+function downloadTemplateExcelExample() {
+    _loadExcelJS().then(function() {
+        var wb = new ExcelJS.Workbook();
+
+        // Sheet 1 — Instructions
+        var ws1 = wb.addWorksheet(t("template.xlsx_instructions_sheet"));
+        ws1.columns = [{ width: 110 }];
+        [
+            t("template.xlsx_instructions_title"),
+            "",
+            t("template.xlsx_instructions_line1"),
+            t("template.xlsx_instructions_line2"),
+            t("template.xlsx_instructions_line3"),
+            t("template.xlsx_instructions_line4"),
+            "",
+            t("template.xlsx_instructions_cols"),
+            t("template.xlsx_instructions_col_section"),
+            t("template.xlsx_instructions_col_question"),
+            t("template.xlsx_instructions_col_expected"),
+            t("template.xlsx_instructions_col_criticality"),
+            t("template.xlsx_instructions_col_weight"),
+            "",
+            t("template.xlsx_instructions_note")
+        ].forEach(function(line) { ws1.addRow([line]); });
+        ws1.getRow(1).font = { bold: true, size: 14 };
+
+        // Sheet 2 — Questions
+        var ws2 = wb.addWorksheet(t("template.xlsx_questions_sheet"));
+        ws2.columns = [
+            { header: t("template.xlsx_col_section"), key: "section", width: 28 },
+            { header: t("template.xlsx_col_question"), key: "question", width: 60 },
+            { header: t("template.xlsx_col_expected"), key: "expected", width: 40 },
+            { header: t("template.xlsx_col_criticality"), key: "criticality", width: 16 },
+            { header: t("template.xlsx_col_weight"), key: "weight", width: 10 }
+        ];
+        ws2.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
+        ws2.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+        ws2.views = [{ state: "frozen", ySplit: 1 }];
+
+        // Example rows
+        var examples = [
+            ["Gouvernance", "Avez-vous une politique de securite de l'information documentee et approuvee par la direction ?", "Politique SSI signee, derniere revue < 12 mois", "major", 5],
+            ["Gouvernance", "Un responsable de la securite (RSSI ou equivalent) est-il designe ?", "Nom, fonction, rattachement hierarchique", "major", 5],
+            ["Gestion des acces", "Appliquez-vous le principe du moindre privilege sur les comptes utilisateurs ?", "Procedure de revue d'acces, frequence, peripherique couvert", "blocker", 8],
+            ["Gestion des acces", "L'authentification multi-facteur (MFA) est-elle activee pour les acces a privileges ?", "Liste des systemes proteges, type de MFA", "blocker", 8],
+            ["Protection des donnees", "Les donnees sensibles sont-elles chiffrees au repos et en transit ?", "Algorithmes, gestion des cles", "major", 7],
+            ["Protection des donnees", "Des sauvegardes testees regulierement sont-elles en place ?", "Frequence, retention, test de restauration", "major", 6],
+            ["Incidents", "Disposez-vous d'un plan de reponse aux incidents de securite ?", "Plan documente, exercices annuels", "major", 5],
+            ["Sous-traitance", "Evaluez-vous la securite de vos propres sous-traitants critiques ?", "Process d'evaluation, frequence", "info", 3]
+        ];
+        examples.forEach(function(row) { ws2.addRow(row); });
+
+        // Data validation on criticality column (col 4)
+        var CRITS = ["info", "major", "blocker"];
+        for (var r = 2; r <= 200; r++) {
+            ws2.getCell(r, 4).dataValidation = {
+                type: "list",
+                allowBlank: true,
+                formulae: ['"' + CRITS.join(",") + '"']
+            };
+            ws2.getCell(r, 5).dataValidation = {
+                type: "whole",
+                operator: "between",
+                allowBlank: true,
+                formulae: ["0", "100"],
+                errorTitle: t("template.xlsx_weight_error_title"),
+                error: t("template.xlsx_weight_error")
+            };
+        }
+
+        wb.xlsx.writeBuffer().then(function(buf) {
+            var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            _triggerDownload(blob, "template_questionnaire_example.xlsx");
+        });
+    }).catch(function(err) {
+        console.error("ExcelJS load failed:", err);
+        alert(t("assessment.invalid_excel"));
+    });
+}
+window.downloadTemplateExcelExample = downloadTemplateExcelExample;
+
+function importTemplateFromExcel() {
+    var input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".xlsx";
+    input.onchange = function(e) {
+        var file = e.target.files && e.target.files[0];
+        if (file) _handleImportedTemplateExcel(file);
+    };
+    input.click();
+}
+window.importTemplateFromExcel = importTemplateFromExcel;
+window._handleImportedTemplateExcel = _handleImportedTemplateExcel;
+
+function _handleImportedTemplateExcel(file) {
+    _loadExcelJS().then(function() {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var wb = new ExcelJS.Workbook();
+            wb.xlsx.load(e.target.result).then(function() {
+                // Find the questions sheet: localized name, "Questions", or first
+                // sheet with a recognizable header row.
+                var ws = wb.getWorksheet(t("template.xlsx_questions_sheet"));
+                if (!ws) ws = wb.getWorksheet("Questions");
+                if (!ws) {
+                    ws = wb.worksheets.find(function(w) {
+                        if (w.rowCount < 2) return false;
+                        var firstText = _xlCellText(w.getRow(1).getCell(1)).toLowerCase();
+                        return firstText === "section" || firstText === t("template.xlsx_col_section").toLowerCase();
+                    });
+                }
+                if (!ws) ws = wb.worksheets[0];
+                if (!ws || ws.rowCount < 2) {
+                    alert(t("template.xlsx_import_empty"));
+                    return;
+                }
+
+                // Build header → column map
+                var headerIdx = {};
+                ws.getRow(1).eachCell(function(cell, col) {
+                    var txt = _xlCellText(cell).toLowerCase().trim();
+                    if (txt) headerIdx[txt] = col;
+                });
+                function col(key, fallbacks) {
+                    var candidates = [key].concat(fallbacks || []);
+                    for (var i = 0; i < candidates.length; i++) {
+                        if (headerIdx[candidates[i]] != null) return headerIdx[candidates[i]];
+                    }
+                    return null;
+                }
+                var cIdx = {
+                    section:     col("section"),
+                    question:    col("question", ["text", "texte", "intitule", "intitulé"]),
+                    expected:    col("expected", ["reponse attendue", "réponse attendue", "preuve attendue", "attendu"]),
+                    criticality: col("criticality", ["criticite", "criticité"]),
+                    weight:      col("weight", ["poids"])
+                };
+
+                if (cIdx.section == null || cIdx.question == null) {
+                    alert(t("template.xlsx_import_missing_cols"));
+                    return;
+                }
+
+                // Build sections array preserving order
+                var sectionsByTitle = {};
+                var sectionsOrder = [];
+                var totalQ = 0;
+
+                for (var r = 2; r <= ws.rowCount; r++) {
+                    var row = ws.getRow(r);
+                    var secTitle = _xlCellText(row.getCell(cIdx.section)).trim();
+                    var qText = _xlCellText(row.getCell(cIdx.question)).trim();
+                    if (!secTitle || !qText) continue;
+
+                    if (!sectionsByTitle[secTitle]) {
+                        sectionsByTitle[secTitle] = {
+                            id: "SEC-" + String(sectionsOrder.length + 1).padStart(3, "0"),
+                            title: secTitle,
+                            description: "",
+                            questions: []
+                        };
+                        sectionsOrder.push(secTitle);
+                    }
+                    var sec = sectionsByTitle[secTitle];
+                    var crit = cIdx.criticality ? _xlCellText(row.getCell(cIdx.criticality)).toLowerCase().trim() : "";
+                    if (["info", "major", "blocker"].indexOf(crit) < 0) crit = "major";
+                    var w = cIdx.weight ? parseInt(_xlCellText(row.getCell(cIdx.weight)), 10) : 5;
+                    if (isNaN(w) || w < 1) w = 5;
+                    if (w > 100) w = 100;
+
+                    sec.questions.push({
+                        id: "Q-" + String(sec.questions.length + 1).padStart(3, "0"),
+                        type: "free_text",
+                        text: qText,
+                        description: "",
+                        expected: cIdx.expected ? _xlCellText(row.getCell(cIdx.expected)) : "",
+                        weight: w,
+                        criticality: crit,
+                        options: []
+                    });
+                    totalQ++;
+                }
+
+                if (totalQ === 0) {
+                    alert(t("template.xlsx_import_empty"));
+                    return;
+                }
+
+                var lang = (typeof _locale === "string" && _locale === "en") ? "en" : "fr";
+                var baseName = (file.name || "").replace(/\.[^.]+$/, "") || t("template.imported_default_name");
+                var tpl = {
+                    id: _nextTemplateId(),
+                    name: baseName,
+                    description: t("template.imported_desc"),
+                    kind: "questionnaire",
+                    language: lang,
+                    version: 1,
+                    created_at: _today(),
+                    updated_at: _today(),
+                    sections: sectionsOrder.map(function(title) { return sectionsByTitle[title]; })
+                };
+                // Normalize question IDs to be globally unique within the template
+                _normalizeTemplateQuestionIds(tpl);
+
+                if (!D.questionnaire_templates) D.questionnaire_templates = [];
+                D.questionnaire_templates.push(tpl);
+                _autoSave();
+                showStatus(t("template.imported") + " (" + totalQ + ")");
+                _editingTemplateId = tpl.id;
+                renderPanel();
+            }).catch(function(err) {
+                console.error("Template Excel import failed:", err);
+                alert(t("template.xlsx_import_error") + " — " + (err && err.message ? err.message : err));
+            });
+        };
+        reader.onerror = function() { alert(t("template.xlsx_import_error")); };
+        reader.readAsArrayBuffer(file);
+    }).catch(function(err) {
+        console.error("ExcelJS load failed:", err);
+        alert(t("template.xlsx_import_error"));
     });
 }
 
@@ -4977,435 +5480,6 @@ function _loadExcelJS() {
     });
 }
 
-function exportExcel() {
-    _loadExcelJS().then(function() {
-        showStatus(t("menu_export_excel") + "...");
-        var wb = new ExcelJS.Workbook();
-        wb.creator = "CISO Toolbox — Vendor";
-        var org = D.metadata.organization || "";
-
-        // ── Colors ──
-        var headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A5F" } };
-        var headerFont = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
-        var borderThin = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
-
-        function _applyHeaders(ws) {
-            var row = ws.getRow(1);
-            row.eachCell(function(cell) {
-                cell.fill = headerFill;
-                cell.font = headerFont;
-                cell.border = borderThin;
-                cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-            });
-            row.height = 28;
-        }
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 1: Fournisseurs
-        // ════════════════════════════════════════════════════════
-        var ws1 = wb.addWorksheet(t("nav.vendors"));
-        ws1.columns = [
-            { header: "ID", key: "id", width: 10 },
-            { header: t("vendor.name"), key: "name", width: 25 },
-            { header: t("vendor.status"), key: "status", width: 12 },
-            { header: t("vendor.sector"), key: "sector", width: 20 },
-            { header: t("vendor.country"), key: "country", width: 12 },
-            { header: t("vendor.website"), key: "website", width: 25 },
-            { header: t("vendor.contact_name"), key: "contact", width: 18 },
-            { header: t("vendor.contact_email"), key: "email", width: 22 },
-            { header: t("vendor.cls_ops_impact"), key: "ops", width: 10 },
-            { header: t("vendor.cls_processes"), key: "proc", width: 10 },
-            { header: t("vendor.cls_replace_difficulty"), key: "repl", width: 10 },
-            { header: t("vendor.cls_data_sensitivity"), key: "data", width: 10 },
-            { header: t("vendor.cls_integration"), key: "integ", width: 10 },
-            { header: t("vendor.cls_regulatory"), key: "reg", width: 10 },
-            { header: t("vendor.dependance"), key: "dep", width: 12 },
-            { header: t("vendor.penetration"), key: "pen", width: 12 },
-            { header: t("vendor.maturite"), key: "mat", width: 10 },
-            { header: t("vendor.confiance"), key: "conf", width: 10 },
-            { header: t("vendor.threat_level"), key: "menace", width: 12 },
-            { header: t("vendor.tier"), key: "tier", width: 12 },
-            { header: t("vendor.gdpr_subprocessor"), key: "gdpr", width: 10 },
-            { header: "DORA", key: "dora", width: 8 },
-            { header: t("vendor.contract_start"), key: "start", width: 14 },
-            { header: t("vendor.contract_end"), key: "end", width: 14 },
-            { header: t("vendor.review_date"), key: "review", width: 14 },
-            { header: t("vendor.notes"), key: "notes", width: 30 }
-        ];
-        D.vendors.forEach(function(v, i) {
-            var c = v.classification || {};
-            var ex = v.exposure || {};
-            var ct = v.contract || {};
-            var co = v.contact || {};
-            var row = i + 2;
-            ws1.addRow({
-                id: v.id, name: v.name, status: t("vendor.status_" + (v.status || "prospect")),
-                sector: v.sector, country: v.country, website: v.website,
-                contact: co.name, email: co.email,
-                ops: c.ops_impact || 0, proc: c.processes || 0, repl: c.replace_difficulty || 0,
-                data: c.data_sensitivity || 0, integ: c.integration || 0, reg: c.regulatory_impact || 0,
-                dep: null, pen: null, mat: ex.maturite || 0, conf: ex.confiance || 0,
-                menace: null, tier: null,
-                gdpr: c.gdpr_subprocessor ? t("common.yes") || "Oui" : "",
-                dora: _isDoraICTCritical(c) ? "Oui" : "",
-                start: ct.start_date, end: ct.end_date, review: ct.review_date,
-                notes: v.notes
-            });
-            // Formulas: Dep = AVG(ops, proc, repl), Pen = AVG(data, integ, reg)
-            var depCol = "O", penCol = "P", matCol = "Q", confCol = "R", menaceCol = "S", tierCol = "T";
-            ws1.getCell(depCol + row).value = { formula: "ROUND(AVERAGE(I" + row + ",J" + row + ",K" + row + ")*10,0)/10" };
-            ws1.getCell(penCol + row).value = { formula: "ROUND(AVERAGE(L" + row + ",M" + row + ",N" + row + ")*10,0)/10" };
-            ws1.getCell(menaceCol + row).value = { formula: "IF(AND(" + matCol + row + ">0," + confCol + row + ">0),ROUND((" + depCol + row + "*" + penCol + row + ")/(" + matCol + row + "*" + confCol + row + ")*100,0)/100,0)" };
-            ws1.getCell(tierCol + row).value = { formula: 'IF(' + menaceCol + row + '>=4,"' + t("vendor.exposure_critical") + '",IF(' + menaceCol + row + '>=2,"' + t("vendor.exposure_high") + '",IF(' + menaceCol + row + '>=1,"' + t("vendor.exposure_moderate") + '","' + t("vendor.exposure_low") + '")))' };
-        });
-        _applyHeaders(ws1);
-        ws1.autoFilter = { from: "A1", to: "Z" + (D.vendors.length + 1) };
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 2: Risques
-        // ════════════════════════════════════════════════════════
-        var ws2 = wb.addWorksheet(t("nav.risks"));
-        ws2.columns = [
-            { header: "ID", key: "id", width: 14 },
-            { header: t("risk.vendor"), key: "vendor", width: 20 },
-            { header: t("risk.risk_title"), key: "title", width: 30 },
-            { header: t("risk.category"), key: "cat", width: 12 },
-            { header: t("risk.impact"), key: "impact", width: 8 },
-            { header: t("risk.likelihood"), key: "likelihood", width: 12 },
-            { header: t("risk.inherent_score"), key: "score", width: 12 },
-            { header: t("risk.treatment"), key: "treatment", width: 12 },
-            { header: t("risk.residual_impact"), key: "resi", width: 10 },
-            { header: t("risk.residual_likelihood"), key: "resl", width: 12 },
-            { header: t("risk.residual_score"), key: "resscore", width: 12 },
-            { header: t("risk.status"), key: "status", width: 12 },
-            { header: t("risk.description"), key: "desc", width: 40 }
-        ];
-        D.risks.forEach(function(r, i) {
-            var row = i + 2;
-            ws2.addRow({
-                id: r.id, vendor: _vendorName(r.vendor_id), title: r.title,
-                cat: r.category, impact: r.impact, likelihood: r.likelihood,
-                score: null, treatment: r.treatment ? t("risk.treatment_" + r.treatment.response) : "",
-                resi: r.residual_impact || "", resl: r.residual_likelihood || "",
-                resscore: null, status: t("risk.status_" + (r.status || "active")),
-                desc: r.description
-            });
-            // Formulas: inherent = I*L, residual = rI*rL
-            ws2.getCell("G" + row).value = { formula: "E" + row + "*F" + row };
-            ws2.getCell("K" + row).value = { formula: 'IF(AND(I' + row + '<>"",J' + row + '<>""),I' + row + "*J" + row + ',"")'};
-            // Color inherent score
-            ws2.getCell("G" + row).fill = null;
-        });
-        _applyHeaders(ws2);
-        ws2.autoFilter = { from: "A1", to: "M" + (D.risks.length + 1) };
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 3: Mesures
-        // ════════════════════════════════════════════════════════
-        var ws3 = wb.addWorksheet(t("nav.measures"));
-        ws3.columns = [
-            { header: "ID", key: "id", width: 14 },
-            { header: t("risk.vendor"), key: "vendor", width: 20 },
-            { header: t("measure.col_mesure"), key: "mesure", width: 35 },
-            { header: t("measure.col_type"), key: "type", width: 16 },
-            { header: t("measure.col_statut"), key: "statut", width: 12 },
-            { header: t("measure.col_responsable"), key: "resp", width: 18 },
-            { header: t("measure.col_echeance"), key: "echeance", width: 14 },
-            { header: t("measure.ref_socle"), key: "ref", width: 20 },
-            { header: t("measure.details"), key: "details", width: 40 },
-            { header: t("measure.effet"), key: "effet", width: 30 }
-        ];
-        D.vendors.forEach(function(v) {
-            (v.measures || []).forEach(function(m) {
-                ws3.addRow({
-                    id: m.id, vendor: v.name, mesure: m.mesure,
-                    type: m.type, statut: t("measure." + (m.statut || "planifie")),
-                    resp: m.responsable, echeance: m.echeance,
-                    ref: m.ref_socle, details: m.details, effet: m.effet
-                });
-            });
-        });
-        _applyHeaders(ws3);
-        ws3.autoFilter = { from: "A1", to: "J" + (ws3.rowCount) };
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 4: Evaluations
-        // ════════════════════════════════════════════════════════
-        var ws4 = wb.addWorksheet(t("nav.assessments"));
-        ws4.columns = [
-            { header: "ID", key: "id", width: 12 },
-            { header: t("risk.vendor"), key: "vendor", width: 20 },
-            { header: t("assessment.type"), key: "type", width: 14 },
-            { header: t("assessment.date"), key: "date", width: 14 },
-            { header: t("assessment.status"), key: "status", width: 14 },
-            { header: t("assessment.score"), key: "score", width: 10 },
-            { header: t("assessment.completion"), key: "completion", width: 12 }
-        ];
-        D.assessments.forEach(function(a) {
-            ws4.addRow({
-                id: a.id, vendor: _vendorName(a.vendor_id),
-                type: t("assessment.type_" + (a.type || "periodic")),
-                date: a.date, status: t("assessment.status_" + (a.status || "draft")),
-                score: a.score != null ? a.score + "%" : "", completion: (a.completion_rate || 0) + "%"
-            });
-        });
-        _applyHeaders(ws4);
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 5: Documents
-        // ════════════════════════════════════════════════════════
-        var ws5 = wb.addWorksheet(t("nav.documents"));
-        ws5.columns = [
-            { header: "ID", key: "id", width: 10 },
-            { header: t("risk.vendor"), key: "vendor", width: 20 },
-            { header: t("doc.name"), key: "name", width: 30 },
-            { header: t("doc.type"), key: "type", width: 16 },
-            { header: "URL", key: "url", width: 35 },
-            { header: t("doc.expiry"), key: "expiry", width: 14 },
-            { header: t("doc.status"), key: "status", width: 12 }
-        ];
-        D.documents.forEach(function(d, i) {
-            var row = i + 2;
-            var statusLabel = "";
-            if (d.expiry_date) {
-                var exp = new Date(d.expiry_date), now = new Date();
-                statusLabel = exp < now ? t("doc.status_expired") : exp < new Date(now.getTime() + 30 * 86400000) ? t("doc.status_expiring") : t("doc.status_valid");
-            }
-            ws5.addRow({
-                id: d.id, vendor: _vendorName(d.vendor_id), name: d.name,
-                type: _docTypeLabel(d.type), url: d.url, expiry: d.expiry_date, status: statusLabel
-            });
-        });
-        _applyHeaders(ws5);
-
-        // ════════════════════════════════════════════════════════
-        // Sheet 6: Tableau de bord (formulas)
-        // ════════════════════════════════════════════════════════
-        var ws6 = wb.addWorksheet(t("nav.dashboard"));
-        ws6.getColumn(1).width = 30;
-        ws6.getColumn(2).width = 15;
-        var kpis = [
-            [t("dashboard.total_vendors"), { formula: "COUNTA(" + t("nav.vendors") + "!A2:A1000)" }],
-            [t("dashboard.critical_vendors"), { formula: 'COUNTIF(' + t("nav.vendors") + '!T2:T1000,"' + t("vendor.exposure_critical") + '")' }],
-            [t("dashboard.open_risks"), { formula: 'COUNTIFS(' + t("nav.risks") + '!L2:L1000,"<>"&"' + t("risk.status_closed") + '",' + t("nav.risks") + '!L2:L1000,"<>")' }],
-            [t("dashboard.pending_assessments"), { formula: 'COUNTIFS(' + t("nav.assessments") + '!E2:E1000,"<>"&"' + t("assessment.status_completed") + '",' + t("nav.assessments") + '!E2:E1000,"<>")' }],
-            ["", ""],
-            [t("risk.category") + " CYBER", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"CYBER")' }],
-            [t("risk.category") + " OPS", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"OPS")' }],
-            [t("risk.category") + " COMP", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"COMP")' }],
-            [t("risk.category") + " FIN", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"FIN")' }],
-            [t("risk.category") + " STRAT", { formula: 'COUNTIF(' + t("nav.risks") + '!D2:D1000,"STRAT")' }],
-            ["", ""],
-            [t("measure.planifie"), { formula: 'COUNTIF(' + t("nav.measures") + '!E2:E1000,"' + t("measure.planifie") + '")' }],
-            [t("measure.en_cours"), { formula: 'COUNTIF(' + t("nav.measures") + '!E2:E1000,"' + t("measure.en_cours") + '")' }],
-            [t("measure.termine"), { formula: 'COUNTIF(' + t("nav.measures") + '!E2:E1000,"' + t("measure.termine") + '")' }]
-        ];
-        kpis.forEach(function(kpi, i) {
-            var row = ws6.getRow(i + 1);
-            row.getCell(1).value = kpi[0];
-            row.getCell(1).font = { bold: true, size: 10 };
-            row.getCell(2).value = kpi[1];
-            row.getCell(2).font = { size: 11 };
-            row.getCell(2).alignment = { horizontal: "center" };
-        });
-
-        // ── Download ──
-        wb.xlsx.writeBuffer().then(function(buf) {
-            var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-            var a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = "TPRM_" + (org || "export").replace(/\s/g, "_") + ".xlsx";
-            a.click();
-            URL.revokeObjectURL(a.href);
-            showStatus(t("menu_export_excel") + " ✓");
-        });
-    }).catch(function(e) {
-        alert("Excel export error: " + e.message);
-    });
-}
-window.exportExcel = exportExcel;
-
-function exportPP() {
-    var pp = D.vendors.map(function(v) {
-        var ex = v.exposure || {};
-        return {
-            id: v.id, nom: v.name, type: v.sector || "Prestataire",
-            dependance: Math.round(ex.dependance || 0),
-            penetration: Math.round(ex.penetration || 0),
-            maturite: Math.round(ex.maturite || 0),
-            confiance: Math.round(ex.confiance || 0),
-            measures: (v.measures || []).map(function(m) {
-                return { mesure: m.mesure || "", details: m.details || "", type: m.type || "", statut: m.statut || "", responsable: m.responsable || "", echeance: m.echeance || "" };
-            })
-        };
-    });
-    var data = JSON.stringify({ pp_export: pp, source: "CISO Toolbox — Vendor TPRM" }, null, 2);
-    var blob = new Blob([data], { type: "application/json" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url; a.download = "tprm_pp_export.json"; a.click();
-    URL.revokeObjectURL(url);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// IMPORT FROM RISK (EBIOS RM)
-// ═══════════════════════════════════════════════════════════════
-
-function triggerImportRisk() {
-    document.getElementById("risk-import-input").click();
-}
-window.triggerImportRisk = triggerImportRisk;
-
-function importRiskFile(event) {
-    var file = event.target.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            var data = JSON.parse(e.target.result);
-            // Support pp_export format or full EBIOS RM file
-            var ppList = data.pp_export || data.pp || [];
-            if (!ppList.length) { showStatus(t("vendor.import_risk.no_pp")); return; }
-            // Build measure lookup from Risk data: measures indexed by ID
-            var riskMeasures = {};
-            (data.measures || []).forEach(function(m) { riskMeasures[m.id] = m; });
-            // Build eco lookup: PP ID → list of measure IDs (existing + complementary)
-            var ecoMeasures = {};
-            (data.eco || []).forEach(function(ec) {
-                var ppId = (ec.pp_id || "").split(" - ")[0].trim();
-                if (!ppId) return;
-                var mIds = [];
-                [ec.mesures_existantes, ec.mesures_complementaires].forEach(function(str) {
-                    if (!str) return;
-                    str.split(",").forEach(function(ref) {
-                        var mId = ref.trim().split(" - ")[0].trim();
-                        if (mId && riskMeasures[mId]) mIds.push(mId);
-                    });
-                });
-                ecoMeasures[ppId] = mIds;
-            });
-
-            _saveState();
-            var addedV = 0, addedR = 0, addedM = 0, skipped = 0;
-
-            ppList.forEach(function(pp) {
-                var nom = pp.nom || pp.name || "";
-                var dep = pp.dependance || 0;
-                var pen = pp.penetration || 0;
-                var mat = pp.maturite || 0;
-                var conf = pp.confiance || 0;
-
-                // Find existing vendor or create new one
-                var existing = D.vendors.find(function(v) { return v.name === nom; });
-                var vendor, vid;
-                if (existing) {
-                    vendor = existing;
-                    vid = existing.id;
-                } else {
-                    vid = "PP-" + String(D.vendors.length + 1).padStart(3, "0");
-                    vendor = {
-                        id: vid, name: nom, legal_entity: "", country: "", sector: pp.type || pp.categorie || "Prestataire",
-                        website: "", siret: "", status: "active",
-                        contact: { name: "", email: "" },
-                        internal_contact: { name: "", email: "" },
-                        contract: { start_date: "", end_date: "", review_date: "" },
-                        classification: {
-                            ops_impact: Math.round(dep), processes: Math.round(dep), replace_difficulty: Math.round(dep),
-                            data_sensitivity: Math.round(pen), integration: Math.round(pen), regulatory_impact: Math.round(pen)
-                        },
-                        exposure: { dependance: dep, penetration: pen, maturite: mat, confiance: conf },
-                        certifications: [], dpa_signed: false, sub_contractors: [], measures: [], notes: ""
-                    };
-                    D.vendors.push(vendor);
-                    addedV++;
-                }
-                if (!vendor.measures) vendor.measures = [];
-
-                // Import measures from pp_export format AND eco table
-                var mIds = ecoMeasures[pp.id] || [];
-                var ppMeasures = pp.measures || [];
-                var vendorMeasureRefs = [];
-                var latestDue = "";
-
-                ppMeasures.forEach(function(m) {
-                    var mid = vid + "-M" + String(addedM + 1).padStart(2, "0");
-                    vendor.measures.push({
-                        id: mid, mesure: m.mesure || "", details: m.details || "", type: m.type || "",
-                        statut: m.statut || "a_lancer", responsable: m.responsable || "", echeance: m.echeance || ""
-                    });
-                    vendorMeasureRefs.push(mid + " - " + (m.mesure || "").substring(0, 40));
-                    if (m.echeance && m.echeance > latestDue) latestDue = m.echeance;
-                    addedM++;
-                });
-                mIds.forEach(function(mId) {
-                    var m = riskMeasures[mId];
-                    if (!m) return;
-                    var mid = vid + "-M" + String(addedM + 1).padStart(2, "0");
-                    vendor.measures.push({
-                        id: mid, mesure: m.mesure || "", details: m.details || "", type: m.type || "",
-                        statut: m.statut === "Terminé" ? "termine" : m.statut === "En cours" ? "en_cours" : "a_lancer",
-                        responsable: m.responsable || "", echeance: m.echeance || ""
-                    });
-                    vendorMeasureRefs.push(mid + " - " + (m.mesure || "").substring(0, 40));
-                    if (m.echeance && m.echeance > latestDue) latestDue = m.echeance;
-                    addedM++;
-                });
-
-                // Create a global EBIOS risk for this vendor with linked measures
-                var menace = (mat && conf) ? Math.round((dep * pen) / (mat * conf) * 100) / 100 : 0;
-                var impact = Math.min(Math.max(Math.round(dep), 1), 5);
-                var likelihood = Math.min(Math.max(Math.round(menace), 1), 5);
-                var rid = vid + "-R01";
-                D.risks.push({
-                    id: rid, vendor_id: vid,
-                    title: t("vendor.import_risk.risk_title", {name: nom}),
-                    description: t("vendor.import_risk.risk_desc", {name: nom, dep: dep, pen: pen, mat: mat, conf: conf, menace: menace}),
-                    category: "CYBER", impact: impact, likelihood: likelihood,
-                    treatment: { response: vendorMeasureRefs.length ? "mitigate" : "accept", details: "", due_date: latestDue },
-                    residual_impact: 0, residual_likelihood: 0, status: "active",
-                    linked_measures: vendorMeasureRefs.join(", ")
-                });
-                addedR++;
-            });
-
-            _autoSave();
-            renderPanel();
-            showStatus(t("vendor.import_risk.success", {vendors: addedV, risks: addedR, measures: addedM, skipped: skipped}));
-        } catch(err) {
-            showStatus(t("vendor.import_risk.error", {msg: err.message}));
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = "";
-}
-window.importRiskFile = importRiskFile;
-
-// ═══════════════════════════════════════════════════════════════
-// FILE MENU (save/load)
-// ═══════════════════════════════════════════════════════════════
-
-window.exportPP = exportPP;
-
-// saveJSON and openFile are provided by cisotoolbox.js (with AES-256 encryption)
-
-function _importPP(ppList) {
-    ppList.forEach(function(pp) {
-        var exists = D.vendors.find(function(v) { return v.id === pp.id; });
-        if (!exists) {
-            D.vendors.push({
-                id: pp.id, name: pp.nom, sector: pp.type || "", status: "active",
-                classification: { gdpr_subprocessor: false },
-                exposure: {
-                    dependance: pp.dependance || 0, penetration: pp.penetration || 0,
-                    maturite: pp.maturite || 0, confiance: pp.confiance || 0
-                },
-                contact: {}, internal_contact: {}, contract: {}, certifications: [],
-                measures: [],
-                notes: "Importe depuis EBIOS RM\nDependance: " + (pp.dependance || "-") + " | Penetration: " + (pp.penetration || "-") + " | Maturite: " + (pp.maturite || "-") + " | Confiance: " + (pp.confiance || "-")
-            });
-        }
-    });
-}
 
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
@@ -5626,13 +5700,6 @@ function _saveDoraSettings() {
 // _autoSave, _loadAutoSave, newAnalysis provided by cisotoolbox.js
 
 function _initDataAndRender(cb) {
-    // Handle PP import (file opened via openFile but contains pp_export)
-    if (D && D.pp_export && !D.vendors) {
-        var backup = D.pp_export;
-        D = JSON.parse(JSON.stringify(TPRM_INIT_DATA));
-        _loadAutoSave();
-        _importPP(backup);
-    }
     _panel = "dashboard";
     _selectedVendor = null;
     renderAll();
@@ -5735,9 +5802,8 @@ function _importCustomQuestionnaire(csvText) {
 
     if (questions.length === 0) { showStatus(t("settings.custom_questionnaire_error")); return; }
 
-    _saveState();
     D._custom_questionnaire = questions;
-    _autoSave();
+    _autoSave(); // _autoSave hook handles the undo-stack push
     if (typeof openSettings === "function") openSettings();
     showStatus(t("settings.custom_questionnaire_imported", {count: questions.length}));
 }
@@ -6128,56 +6194,46 @@ function _applyAiData(v, data) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// IMPORT PP FROM EBIOS RM
+// SNAPSHOTS / HISTORY
 // ═══════════════════════════════════════════════════════════════
+// Reuses createSnapshot / restoreSnapshot / deleteSnapshot / exportSnapshot /
+// enableSnapEncryption / disableSnapEncryption / _getSnapshots / _isSnapEncrypted
+// from cisotoolbox_local.js.
 
-function importPPFromRisk() {
-    var fi = document.createElement("input");
-    fi.type = "file"; fi.accept = ".json";
-    fi.onchange = function() {
-        if (!fi.files[0]) return;
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                var data = JSON.parse(e.target.result);
-                var imported = 0;
-                // Support both pp_export format and full EBIOS RM data
-                var ppList = data.pp_export || data.pp || [];
-                // Also look for PP in EBIOS RM full format (atelier 3)
-                if (!ppList.length && data.srov) {
-                    // Extract unique PP from scenarios
-                }
-                if (!ppList.length && data.parties_prenantes) {
-                    ppList = data.parties_prenantes;
-                }
-                ppList.forEach(function(pp) {
-                    var exists = D.vendors.find(function(v) { return v.id === pp.id || v.name === pp.nom; });
-                    if (exists) return;
-                    D.vendors.push({
-                        id: pp.id || "PP-" + String(D.vendors.length + 1).padStart(3, "0"),
-                        name: pp.nom || pp.name || "",
-                        sector: pp.type || "",
-                        status: "active",
-                        classification: { gdpr_subprocessor: false },
-                        exposure: {
-                            dependance: pp.dependance || 0, penetration: pp.penetration || 0,
-                            maturite: pp.maturite || 0, confiance: pp.confiance || 0
-                        },
-                        contact: {}, internal_contact: {}, contract: {}, certifications: [], measures: [],
-                        notes: "Importe depuis EBIOS RM\nDependance: " + (pp.dependance || "-") + " | Penetration: " + (pp.penetration || "-") + " | Maturite: " + (pp.maturite || "-") + " | Confiance: " + (pp.confiance || "-")
-                    });
-                    imported++;
-                });
-                _autoSave();
-                showStatus(t("pp.imported", { count: imported }));
-                selectPanel("vendors");
-            } catch (err) { alert("Invalid JSON: " + err.message); }
-        };
-        reader.readAsText(fi.files[0]);
-    };
-    fi.click();
+async function renderHistory() {
+    var el = document.getElementById("history-content");
+    if (!el) return;
+    var snaps = await _getSnapshots();
+    var isEnc = _isSnapEncrypted();
+    var h = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">';
+    h += '<button class="btn-add" data-click="createSnapshot">' + t("tprm.history.create") + '</button>';
+    if (isEnc) {
+        h += '<button class="btn-add" style="background:var(--red)" data-click="disableSnapEncryption">' + t("tprm.history.decrypt") + '</button>';
+        h += '<span style="color:var(--green);font-size:0.82em">&#128274; ' + t("tprm.history.encryption_active") + '</span>';
+    } else {
+        h += '<button class="btn-add" style="background:var(--light-blue)" data-click="enableSnapEncryption">' + t("tprm.history.encrypt") + '</button>';
+    }
+    h += '</div>';
+    if (!snaps.length) {
+        h += '<p style="color:var(--text-muted);font-size:0.9em">' + t("tprm.history.none") + '</p>';
+    } else {
+        h += '<table><thead><tr><th>' + t("tprm.history.col_name") + '</th><th>' + t("tprm.history.col_date") + '</th><th>' + t("tprm.history.col_org") + '</th><th>' + t("tprm.history.col_actions") + '</th></tr></thead><tbody>';
+        for (var i = snaps.length - 1; i >= 0; i--) {
+            var s = snaps[i];
+            var d = new Date(s.date);
+            var loc = _locale === "en" ? "en-US" : "fr-FR";
+            var dateStr = d.toLocaleDateString(loc) + " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+            h += '<tr><td><strong>' + esc(s.name || "") + '</strong></td><td>' + dateStr + '</td><td style="font-size:0.82em">' + esc(s.societe || s.organization || "") + '</td>';
+            h += '<td><button class="btn-add" style="margin:0 4px 0 0" data-click="restoreSnapshot" data-args=\'' + _da(i) + '\'>' + t("tprm.history.restore") + '</button>';
+            h += '<button class="btn-add" style="margin:0 4px 0 0;background:var(--light-blue)" data-click="exportSnapshot" data-args=\'' + _da(i) + '\'>' + t("tprm.history.export") + '</button>';
+            h += '<button class="btn-del" data-click="deleteSnapshot" data-args=\'' + _da(i) + '\'>&times;</button></td></tr>';
+        }
+        h += '</tbody></table>';
+    }
+    h += '<p style="margin-top:16px;color:var(--text-muted);font-size:0.82em">' + t("tprm.history.hint") + '</p>';
+    el.innerHTML = h;
 }
-window.importPPFromRisk = importPPFromRisk;
+window.renderHistory = renderHistory;
 
 // ═══════════════════════════════════════════════════════════════
 // HELP
@@ -6188,11 +6244,36 @@ window.importPPFromRisk = importPPFromRisk;
 // INIT
 // ═══════════════════════════════════════════════════════════════
 
+// Wrap _autoSave so that every mutation pushes the previous state onto
+// the undo stack. Done once at load. This is how the Risk app gets
+// implicit undo history without sprinkling _saveState() everywhere.
+(function _installUndoHook() {
+    if (typeof _autoSave !== "function" || typeof _saveState !== "function") return;
+    if (_autoSave.__undoHooked) return;
+    var _original = _autoSave;
+    var _lastSerialized = null;
+    window._autoSave = function() {
+        try {
+            var cur = JSON.stringify(D);
+            if (_lastSerialized != null && _lastSerialized !== cur) {
+                _undoStack.push(_lastSerialized);
+                if (_undoStack.length > 50) _undoStack.shift();
+                _redoStack.length = 0;
+                if (typeof _updateUndoButtons === "function") _updateUndoButtons();
+            }
+            _lastSerialized = cur;
+        } catch (e) { /* ignore serialization errors */ }
+        return _original.apply(this, arguments);
+    };
+    window._autoSave.__undoHooked = true;
+})();
+
 function renderAll() {
     var tr = document.getElementById("toolbar-right");
     if (tr) tr.innerHTML = _getSettingsButtonHTML();
     _applyStaticTranslations();
     renderPanel();
+    if (typeof _updateUndoButtons === "function") _updateUndoButtons();
 }
 
 // Init: if catalog is present, defer to _appInitCallback; otherwise render directly

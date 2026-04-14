@@ -72,6 +72,38 @@
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 
+/* ── Table inline editors ─────────────────────────────── */
+/* Align the visual weight of inputs/selects that live inside table cells
+   (Risks tab, Measures registry, Documents table). Without this, default
+   browser styling gives selects thick embossed borders that clash with
+   the rest of the app. Checkboxes and radios are untouched. */
+td > input:not([type="checkbox"]):not([type="radio"]),
+td > select,
+td input:not([type="checkbox"]):not([type="radio"]):not(.ref-search),
+td select {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 6px;
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: inherit;
+    font-family: inherit;
+    max-width: 100%;
+    box-sizing: border-box;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+td > input:not([type="checkbox"]):not([type="radio"]):hover,
+td > select:hover { border-color: var(--gray-light); }
+td > input:not([type="checkbox"]):not([type="radio"]):focus,
+td > select:focus {
+    outline: none;
+    border-color: var(--light-blue);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+}
+td > select:disabled { background: var(--bg); color: var(--text-muted); cursor: not-allowed; }
+/* ref-select lives inside <td> too — let it keep its own styling */
+td .ref-select, td .ref-select * { box-shadow: none; }
+
 /* ── Questionnaire templates ──────────────────────────── */
 /* Accessibility: all text colors target WCAG AA (4.5:1) or AAA (7:1).
    --gray-dark (#475569) provides 7:1 on white and ~6.8:1 on --bg.
@@ -80,9 +112,32 @@
 .tpl-header h2 { margin: 0; flex: 1; }
 .tpl-meta { font-size: 0.78em; color: var(--gray-dark); font-weight: 600; }
 
+/* Generic inline SVG icon — inherits font color and font size. */
+.ct-icon { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; flex-shrink: 0; }
+
+/* Harmonized template-list header action buttons: identical size and
+   height, SVG icon + label. Only the background color varies per action. */
+.tpl-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.tpl-header-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-width: 180px; height: 36px; padding: 0 14px; margin: 0;
+    border: 1px solid transparent; border-radius: 6px;
+    font-size: 0.85em; font-weight: 600; line-height: 1;
+    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    background: var(--card-bg); color: var(--text);
+}
+.tpl-header-btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.tpl-header-btn:active { transform: translateY(0); }
+.tpl-header-btn .ct-icon { width: 16px; height: 16px; }
+.tpl-header-btn--primary { background: var(--green); color: #fff; border-color: var(--green); }
+.tpl-header-btn--violet  { background: var(--violet); color: #fff; border-color: var(--violet); }
+.tpl-header-btn--ghost   { background: var(--card-bg); color: var(--gray-dark); border-color: var(--gray-light); }
+.tpl-header-btn--ghost:hover { background: var(--bg-highlight); color: #1d4ed8; border-color: var(--light-blue); }
+
 .tpl-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 14px; transition: all 0.15s; }
 .tpl-card:hover { border-color: var(--light-blue); box-shadow: 0 0 0 1px var(--light-blue); }
-.tpl-card-icon { width: 40px; height: 40px; border-radius: 8px; background: var(--bg-highlight); color: #1d4ed8; display: flex; align-items: center; justify-content: center; font-size: 1.2em; flex-shrink: 0; }
+.tpl-card-icon { width: 40px; height: 40px; border-radius: 8px; background: var(--bg-highlight); color: #1d4ed8; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tpl-card-icon .ct-icon { width: 22px; height: 22px; }
 .tpl-card-body { flex: 1; min-width: 0; }
 .tpl-card-name { font-weight: 700; font-size: 0.95em; color: var(--text); }
 .tpl-card-desc { font-size: 0.82em; color: var(--gray-dark); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -97,8 +152,9 @@
 .tpl-card-icon.tpl-icon-questionnaire { background: #dbeafe; color: #1e3a8a; }
 .tpl-card-icon.tpl-icon-audit { background: #ede9fe; color: #5b21b6; }
 
-/* Bigger action buttons in the template list cards */
-.tpl-card-actions .tpl-icon-btn { padding: 8px 12px; font-size: 1.05em; min-width: 38px; }
+/* Equalized square action buttons in the template list cards */
+.tpl-card-actions .tpl-icon-btn { width: 36px; height: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.tpl-card-actions .tpl-icon-btn .ct-icon { width: 18px; height: 18px; }
 
 /* Accessible CSS tooltip — uses data-tooltip="…" on any element.
    Shows on :hover and :focus-visible. Respects prefers-reduced-motion.
