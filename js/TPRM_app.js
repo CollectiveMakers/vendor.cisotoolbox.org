@@ -1023,8 +1023,8 @@ function _renderVendorRisks(v) {
             emptyText: t("measure.click_to_link"),
             labelFor: function(id) { var m = (v.measures || []).find(function(x) { return x.id === id; }); return m ? (m.mesure || "").substring(0, 50) : ""; },
             tagClick: function(u, optId) { var _mi = -1; if (v.measures) { for (var _k = 0; _k < v.measures.length; _k++) { if (v.measures[_k].id === optId) { _mi = _k; break; } } } if (_mi >= 0) editMeasure(_selectedVendor, _mi, "risks"); },
-            onToggle: (function(ri) { return function(u, ids, el) { var r = D.risks[ri]; if (!r) return; var vn = D.vendors[_selectedVendor]; var labels = ids.map(function(id) { var m = (vn && vn.measures || []).find(function(x) { return x.id === id; }); return id + " - " + (m ? (m.mesure || "").substring(0, 40) : ""); }); r.linked_measures = labels.join(", "); _autoSave(); }; })(riskIdx),
-            onRemove: (function(ri) { return function(u, measureId) { var r = D.risks[ri]; if (!r) return; var parts = (r.linked_measures || "").split(",").map(function(s) { return s.trim(); }); parts = parts.filter(function(p) { return p.split(" - ")[0].trim() !== measureId; }); r.linked_measures = parts.join(", "); _autoSave(); renderPanel(); }; })(riskIdx),
+            onToggle: (function(ri) { return function(u, ids, el) { var r = D.risks[ri]; if (!r) return; var vn = D.vendors[_selectedVendor]; var labels = ids.map(function(id) { var m = (vn && vn.measures || []).find(function(x) { return x.id === id; }); return id + " - " + (m ? (m.mesure || "").substring(0, 40) : ""); }); r.linked_measures = labels.join(", "); _persist("risk", r.id, { linked_measures: r.linked_measures }); }; })(riskIdx),
+            onRemove: (function(ri) { return function(u, measureId) { var r = D.risks[ri]; if (!r) return; var parts = (r.linked_measures || "").split(",").map(function(s) { return s.trim(); }); parts = parts.filter(function(p) { return p.split(" - ")[0].trim() !== measureId; }); r.linked_measures = parts.join(", "); _persist("risk", r.id, { linked_measures: r.linked_measures }); renderPanel(); }; })(riskIdx),
             onFlush: function() { renderPanel(); },
         });
         h += '<td' + hd("mpl") + ' style="min-width:120px">';
@@ -1128,7 +1128,7 @@ function addMeasureForRisk(vendorIdx, riskIdx) {
     var current = r.linked_measures || "";
     var newRef = mId + " - " + desc;
     r.linked_measures = current ? current + ", " + newRef : newRef;
-    _autoSave();
+    _persist("vendor", v.id, { measures: v.measures });
     renderPanel();
 }
 window.addMeasureForRisk = addMeasureForRisk;
@@ -1142,12 +1142,13 @@ function addVendorMeasure(vendorIdx) {
     if (!v) return;
     if (!v.measures) v.measures = [];
     var nextNum = v.measures.length + 1;
-    v.measures.push({
+    var newMeasure = {
         id: v.id + "-M" + String(nextNum).padStart(2, "0"),
         mesure: "", details: "", type: "Contractuelle", statut: "planifie",
         responsable: "", echeance: "", ref_socle: "", effet: ""
-    });
-    _autoSave();
+    };
+    v.measures.push(newMeasure);
+    _persist("vendor", v.id, { measures: v.measures });
     renderPanel();
 }
 window.addVendorMeasure = addVendorMeasure;
@@ -1156,8 +1157,7 @@ function updateVendorMeasure(vendorIdx, measureIdx, field, value) {
     var v = D.vendors[vendorIdx];
     if (!v || !v.measures || !v.measures[measureIdx]) return;
     v.measures[measureIdx][field] = value;
-    _autoSave();
-    // Re-render panel when fields that affect timeline/matrix change
+    _persist("vendor", v.id, { measures: v.measures });
     if (field === "echeance" || field === "statut") {
         renderPanel();
     }
@@ -1169,7 +1169,7 @@ function deleteVendorMeasure(vendorIdx, measureIdx) {
     if (!v || !v.measures) return;
     if (!confirm(t("measure.confirm_delete"))) return;
     v.measures.splice(measureIdx, 1);
-    _autoSave();
+    _persist("vendor", v.id, { measures: v.measures });
     renderPanel();
 }
 window.deleteVendorMeasure = deleteVendorMeasure;
@@ -1218,7 +1218,7 @@ function suggestVendorMeasures(vendorIdx) {
                 });
                 count++;
             });
-            _autoSave();
+            _persist("vendor", v.id, { measures: v.measures });
             renderPanel();
             showStatus(count + " " + t("measure.ai_added"));
         } catch (e) {
@@ -1744,7 +1744,7 @@ function updateDocField(docId, field, value) {
     var doc = D.documents.find(function(d) { return d.id === docId; });
     if (!doc) return;
     doc[field] = value;
-    _autoSave();
+    _persist("document", docId, _obj(field, value));
     if (field === "expiry_date") renderPanel();
 }
 window.updateDocField = updateDocField;
@@ -1755,18 +1755,19 @@ function addDocument() {
     var name = prompt(t("doc.prompt_name"));
     if (!name) return;
     var docId = "DOC-" + String(D.documents.length + 1).padStart(3, "0");
-    D.documents.push({
+    var newDoc = {
         id: docId, vendor_id: v.id, name: name, type: "other",
         url: "", expiry_date: "", source: "manual"
-    });
-    _autoSave();
+    };
+    D.documents.push(newDoc);
+    _persistCreate("document", newDoc);
     renderPanel();
 }
 window.addDocument = addDocument;
 
 function deleteDoc(docId) {
     D.documents = D.documents.filter(function(d) { return d.id !== docId; });
-    _autoSave();
+    _persistDelete("document", docId);
     renderPanel();
 }
 window.deleteDoc = deleteDoc;
@@ -1776,7 +1777,7 @@ function updateVendorConfiance(el) {
     if (!v) return;
     if (!v.exposure) v.exposure = {};
     v.exposure.confiance = parseInt(el.value) || 0;
-    _autoSave();
+    _persist("vendor", v.id, { exposure: v.exposure });
     _refreshThreatDisplay();
 }
 window.updateVendorConfiance = updateVendorConfiance;
@@ -2051,7 +2052,7 @@ function setAnswer(assessId, questionId, answer) {
         if (!hasValidated) v.exposure.maturite = _scoreToMaturite(a.score);
         else _refreshVendorMaturity(v.id);
     }
-    _autoSave();
+    _persist("assessment", a.id, { responses: a.responses, score: a.score, completion_rate: a.completion_rate, status: a.status });
     _refreshThreatDisplay();
     openAssessment(assessId);
 }
@@ -2078,7 +2079,7 @@ function saveAssessment(assessId) {
         else _refreshVendorMaturity(v.id);
     }
 
-    _autoSave();
+    _persist("assessment", a.id, { responses: a.responses, score: a.score, completion_rate: a.completion_rate, status: a.status });
     _refreshThreatDisplay();
     showStatus(t("common.save") + " OK");
     // Return to vendor's assessments tab if we came from there
@@ -2120,7 +2121,7 @@ function deleteAssessment(assessId) {
     var idx = D.assessments.findIndex(function(a) { return a.id === assessId; });
     if (idx < 0) return;
     D.assessments.splice(idx, 1);
-    _autoSave(); // _autoSave hook handles the undo-stack push
+    _persistDelete("assessment", assessId);
     renderPanel();
     showStatus(t("assessment.deleted"));
 }
@@ -2247,7 +2248,7 @@ function addVendor() {
     });
     _selectedVendor = D.vendors.length - 1;
     _vendorTab = "info";
-    _autoSave();
+    _persistCreate("vendor", D.vendors[_selectedVendor]);
     renderPanel();
     // Auto-collect via AI if enabled
     if (aiEnabled && (name || website)) {
@@ -2293,7 +2294,13 @@ function _autoSaveVendorField() {
         v.exposure.confiance = parseInt(el("v-conf")) || 0;
         v.status = el("v-status");
         v.notes = el("v-notes");
-        _autoSave();
+        _persist("vendor", v.id, {
+            name: v.name, legal_entity: v.legal_entity, country: v.country,
+            sector: v.sector, website: v.website, siret: v.siret,
+            contact: v.contact, internal_contact: v.internal_contact,
+            contract: v.contract, classification: v.classification,
+            exposure: v.exposure, status: v.status, notes: v.notes
+        });
         // Update header subtitle
         var sub = document.getElementById("header-subtitle");
         if (sub) sub.textContent = v.name || "";
@@ -2312,9 +2319,11 @@ function deleteVendor(idx) {
         D.risks = D.risks.filter(function(r) { return r.vendor_id !== v.id; });
         D.assessments = D.assessments.filter(function(a) { return a.vendor_id !== v.id; });
     }
+    var vid = v ? v.id : null;
     D.vendors.splice(idx, 1);
     _selectedVendor = null;
-    _autoSave();
+    if (vid) _persistDelete("vendor", vid);
+    else _autoSave();
     renderPanel();
 }
 window.deleteVendor = deleteVendor;
@@ -2322,14 +2331,15 @@ window.deleteVendor = deleteVendor;
 function addRiskForVendor(vendorId) {
     var riskCount = D.risks.filter(function(r) { return r.vendor_id === vendorId; }).length;
     var riskId = vendorId + "-R" + String(riskCount + 1).padStart(2, "0");
-    D.risks.push({
+    var newRisk = {
         id: riskId, vendor_id: vendorId, title: "", description: "",
         category: "CYBER", impact: 3, likelihood: 3,
         treatment: { response: "mitigate", details: "", due_date: "" },
         residual_impact: 0, residual_likelihood: 0,
         status: "needs_treatment"
-    });
-    _autoSave();
+    };
+    D.risks.push(newRisk);
+    _persistCreate("risk", newRisk);
     renderPanel();
 }
 window.addRiskForVendor = addRiskForVendor;
@@ -2350,7 +2360,6 @@ function updateRiskField(riskIdx, field, value) {
     } else if (field === "impact" || field === "likelihood" || field === "residual_impact" || field === "residual_likelihood") {
         var val = parseInt(value) || 0;
         r[field] = val;
-        // Cap residual to initial
         if (field === "impact" && r.residual_impact > val) r.residual_impact = val;
         if (field === "likelihood" && r.residual_likelihood > val) r.residual_likelihood = val;
         if (field === "residual_impact" && val > (r.impact || 5)) r.residual_impact = r.impact || 5;
@@ -2358,15 +2367,17 @@ function updateRiskField(riskIdx, field, value) {
     } else {
         r[field] = value;
     }
-    _autoSave();
+    _persist("risk", r.id, { treatment: r.treatment, impact: r.impact, likelihood: r.likelihood, residual_impact: r.residual_impact, residual_likelihood: r.residual_likelihood, category: r.category, title: r.title, description: r.description, status: r.status });
     renderPanel();
 }
 window.updateRiskField = updateRiskField;
 
 function deleteRisk(riskIdx) {
     if (!confirm(t("risk.confirm_delete"))) return;
+    var rid = D.risks[riskIdx] ? D.risks[riskIdx].id : null;
     D.risks.splice(riskIdx, 1);
-    _autoSave();
+    if (rid) _persistDelete("risk", rid);
+    else _autoSave();
     renderPanel();
 }
 window.deleteRisk = deleteRisk;
@@ -2431,12 +2442,13 @@ window.newAssessment = newAssessment;
 function _newAssessmentManual(vendorId) {
     closeModal();
     var assessId = "EVAL-" + String(D.assessments.length + 1).padStart(3, "0");
-    D.assessments.push({
+    var newAssess = {
         id: assessId, vendor_id: vendorId, type: "periodic",
         date: new Date().toISOString().split("T")[0],
         status: "draft", responses: [], score: null, completion_rate: 0
-    });
-    _autoSave();
+    };
+    D.assessments.push(newAssess);
+    _persistCreate("assessment", newAssess);
     if (_selectedVendor !== null) _assessReturnToVendor = _selectedVendor;
     openAssessment(assessId);
 }
@@ -2446,12 +2458,13 @@ function _newAssessmentImport(vendorId) {
     closeModal();
     // Create assessment then import CSV into it
     var assessId = "EVAL-" + String(D.assessments.length + 1).padStart(3, "0");
-    D.assessments.push({
+    var newAssess = {
         id: assessId, vendor_id: vendorId, type: "periodic",
         date: new Date().toISOString().split("T")[0],
         status: "in_progress", responses: [], score: null, completion_rate: 0
-    });
-    _autoSave();
+    };
+    D.assessments.push(newAssess);
+    _persistCreate("assessment", newAssess);
     // Trigger file import
     var fi = document.createElement("input");
     fi.type = "file";
@@ -2481,7 +2494,7 @@ function _newAssessmentImport(vendorId) {
                 if (existing) { existing.answer = answer; if (comment) existing.comment = comment; }
                 else a.responses.push({ question_id: qId, answer: answer, comment: comment });
             }
-            _autoSave();
+            _persist("assessment", a.id, { responses: a.responses });
             if (_selectedVendor !== null) _assessReturnToVendor = _selectedVendor;
             openAssessment(assessId);
             showStatus(t("assessment.imported"));
@@ -3329,7 +3342,7 @@ function _newAssessmentFromTemplate(vendorId) {
         };
     });
 
-    D.assessments.push({
+    var newAssess = {
         id: assessId,
         vendor_id: vendorId,
         type: "periodic",
@@ -3344,8 +3357,9 @@ function _newAssessmentFromTemplate(vendorId) {
         self_validated_at: null,
         score: null,
         completion_rate: 0
-    });
-    _autoSave();
+    };
+    D.assessments.push(newAssess);
+    _persistCreate("assessment", newAssess);
     closeModal();
     if (_selectedVendor !== null) _assessmentV2Returning = _selectedVendor;
     openAssessmentV2(assessId);
@@ -3665,7 +3679,7 @@ function _touchAssessment(a) {
     a.completion_rate = stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0;
     a.score = _computeAssessmentV2Score(a);
     if (a.completion_rate > 0 && a.status === "draft") a.status = "in_progress";
-    _autoSave();
+    _persist("assessment", a.id, { score: a.score, completion_rate: a.completion_rate, status: a.status });
 }
 
 function _setCoverage(assessId, questionId, coverage) {
@@ -3826,7 +3840,7 @@ function _refreshAssessmentLiveState(assessId, questionId) {
                 check.checked = false;
                 a.self_validation = false;
                 a.self_validated_at = null;
-                _autoSave();
+                _persist("assessment", a.id, { self_validation: a.self_validation, self_validated_at: a.self_validated_at });
             }
             checkLabel.style.cursor = "not-allowed";
             checkLabel.setAttribute("title", t("assessment.complete_all_questions"));
@@ -3846,7 +3860,7 @@ function _onAssessmentCommentChange(assessId, questionId, value) {
     var resp = _findAssessmentResp(a, questionId);
     if (!resp) return;
     resp.comment = value;
-    _autoSave();
+    _persist("assessment", a.id, { responses: a.responses });
     // comment doesn't affect completion, no live refresh needed
 }
 window._onAssessmentCommentChange = _onAssessmentCommentChange;
@@ -3902,7 +3916,7 @@ function _toggleSelfValidation(assessId, checked) {
     if (!a) return;
     a.self_validation = !!checked;
     a.self_validated_at = checked ? new Date().toISOString() : null;
-    _autoSave();
+    _persist("assessment", a.id, { self_validation: a.self_validation, self_validated_at: a.self_validated_at });
     openAssessmentV2(assessId);
 }
 window._toggleSelfValidation = _toggleSelfValidation;
@@ -3913,7 +3927,7 @@ function _submitForApproval(assessId) {
     if (!a.self_validation) { alert(t("assessment.self_validation_required")); return; }
     a.status = "pending_approval";
     a.submitted_at = new Date().toISOString();
-    _autoSave();
+    _persist("assessment", a.id, { status: a.status, submitted_at: a.submitted_at });
     showStatus(t("assessment.submitted"));
     _backFromAssessmentV2();
 }
@@ -3928,7 +3942,7 @@ function _approveAssessment(assessId) {
     _materializeActionPlans(a);
     // Update vendor's maturity from the weighted aggregate of all validated assessments
     _refreshVendorMaturity(a.vendor_id);
-    _autoSave();
+    _persist("assessment", a.id, { status: a.status, approved_at: a.approved_at });
     openAssessmentV2(assessId);
     showStatus(t("assessment.approved"));
 }
@@ -3941,7 +3955,7 @@ function _rejectAssessment(assessId) {
     if (reason === null) return;
     a.status = "rejected";
     a.rejected_reason = reason || "";
-    _autoSave();
+    _persist("assessment", a.id, { status: a.status, rejected_reason: a.rejected_reason });
     openAssessmentV2(assessId);
     showStatus(t("assessment.rejected"));
 }
@@ -4208,7 +4222,7 @@ function _updateAssessmentWeightOverride(assessId, value) {
     if (isNaN(v)) { delete a.weight_override; }
     else { a.weight_override = v; }
     _refreshVendorMaturity(a.vendor_id);
-    _autoSave();
+    _persist("assessment", a.id, { weight_override: a.weight_override });
     renderPanel();
 }
 window._updateAssessmentWeightOverride = _updateAssessmentWeightOverride;
@@ -4218,7 +4232,7 @@ function _toggleAssessmentExcluded(assessId, checked) {
     if (!a) return;
     a.excluded = !!checked;
     _refreshVendorMaturity(a.vendor_id);
-    _autoSave();
+    _persist("assessment", a.id, { excluded: a.excluded });
     renderPanel();
 }
 window._toggleAssessmentExcluded = _toggleAssessmentExcluded;
@@ -5325,10 +5339,10 @@ function deleteUnlinkedMeasures() {
         });
         var before = v.measures.length;
         v.measures = v.measures.filter(function(m) { return allLinkedIds[m.id]; });
+        if (v.measures.length < before) _persist("vendor", v.id, { measures: v.measures });
         count += before - v.measures.length;
     });
     if (count > 0) {
-        _autoSave();
         renderPanel();
         showStatus(count + " " + t("measure.deleted_unlinked"));
     }
@@ -5407,7 +5421,7 @@ function saveMeasureEdit() {
     m.ref_socle = document.getElementById("me-ref").value.trim();
     m.effet = document.getElementById("me-effet").value.trim();
 
-    _autoSave();
+    _persist("vendor", v.id, { measures: v.measures });
     var returnTo = em.returnTo;
     _editingMeasure = null;
 
@@ -5494,7 +5508,7 @@ function _verifyAndAddDoc(vendorId, doc) {
             if (!result.reachable) return;
             var alreadyExists = D.documents.find(function(d) { return d.url === doc.url && d.vendor_id === vendorId; });
             if (alreadyExists) return;
-            D.documents.push({
+            var newDoc = {
                 id: "DOC-" + String(D.documents.length + 1).padStart(3, "0"),
                 vendor_id: vendorId,
                 name: doc.name,
@@ -5503,15 +5517,16 @@ function _verifyAndAddDoc(vendorId, doc) {
                 expiry_date: "",
                 source: "ai",
                 verified: true
-            });
-            if (typeof _autoSave === "function") _autoSave();
+            };
+            D.documents.push(newDoc);
+            if (typeof _persistCreate === "function") _persistCreate("document", newDoc);
+            else if (typeof _autoSave === "function") _autoSave();
         }).catch(function() {});
     } else {
-        // Fallback: no-cors fetch for opensource version
         fetch(doc.url, { method: "GET", mode: "no-cors", redirect: "follow" }).then(function() {
             var alreadyExists = D.documents.find(function(d) { return d.url === doc.url && d.vendor_id === vendorId; });
             if (alreadyExists) return;
-            D.documents.push({
+            var newDoc2 = {
                 id: "DOC-" + String(D.documents.length + 1).padStart(3, "0"),
                 vendor_id: vendorId,
                 name: doc.name,
@@ -5520,8 +5535,10 @@ function _verifyAndAddDoc(vendorId, doc) {
                 expiry_date: "",
                 source: "ai",
                 verified: true
-            });
-            if (typeof _autoSave === "function") _autoSave();
+            };
+            D.documents.push(newDoc2);
+            if (typeof _persistCreate === "function") _persistCreate("document", newDoc2);
+            else if (typeof _autoSave === "function") _autoSave();
         }).catch(function() {});
     }
 }
@@ -5547,7 +5564,7 @@ function _fetchLogo() {
         var ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         v.logo = canvas.toDataURL("image/png");
-        _autoSave();
+        _persist("vendor", v.id, { logo: v.logo });
         renderPanel();
         showStatus(t("vendor.logo_saved"));
     };
@@ -6087,9 +6104,8 @@ function aiAddVendor() {
     _selectedVendor = D.vendors.length - 1;
     _vendorTab = "info";
     _panel = "vendors";
-    _autoSave();
+    _persistCreate("vendor", D.vendors[_selectedVendor]);
     renderPanel();
-    // Trigger AI collect after a tick (DOM needs to update)
     setTimeout(aiCollectInfo, 100);
 }
 window.aiAddVendor = aiAddVendor;
