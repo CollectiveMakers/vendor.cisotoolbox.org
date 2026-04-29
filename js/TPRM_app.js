@@ -5710,8 +5710,8 @@ function _initDataAndRender(cb) {
 
 window.AI_APP_CONFIG = {
     storagePrefix: "tprm",
-    settingsExtraHTML: function() { return _doraSettingsHTML() + _customQuestionnaireHTML(); },
-    onSettingsRendered: function() { _wireDoraSettings(); _wireCustomQuestionnaire(); },
+    settingsExtraHTML: function() { return _doraSettingsHTML() + _customQuestionnaireHTML() + _demoSettingsHTML(); },
+    onSettingsRendered: function() { _wireDoraSettings(); _wireCustomQuestionnaire(); _wireDemoSettings(); },
     onSettingsSaved: function() { _saveDoraSettings(); renderAll(); }
 };
 
