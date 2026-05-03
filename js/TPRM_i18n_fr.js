@@ -1,6 +1,5 @@
 _registerTranslations("fr", {
     "toolbar.subtitle": "Vendor",
-    "nav.dashboard": "Tableau de bord",
     "nav.vendors": "Fournisseurs",
     "nav.risks": "Risques",
     "nav.assessments": "Évaluations",
@@ -104,6 +103,7 @@ _registerTranslations("fr", {
     "measure.ref_socle": "Reference (ISO, ANSSI...)",
     "measure.effet": "Effet attendu",
     "measure.saved": "Mesure enregistrée",
+    "measure.selected_n": "{n} mesure(s) sélectionnée(s)",
     "risk.likelihood": "Vraisemblance",
 
     "vendor.search": "Rechercher...",

@@ -663,8 +663,10 @@ function renderVendorDetail() {
     h += '</div>';
 
     // Tabs
+    var tabs = ["info", "risks", "assessments", "documents"];
+    if (_isDoraEnabled()) tabs.push("dora");
     h += '<div class="vendor-tabs">';
-    ["info", "risks", "assessments", "documents"].forEach(function(tab) {
+    tabs.forEach(function(tab) {
         h += '<button class="vendor-tab' + (_vendorTab === tab ? ' active' : '') + '" data-click="setVendorTab" data-args=\'' + _da(tab) + '\'>' + t("vendor.tab_" + tab) + '</button>';
     });
     h += '</div>';
@@ -675,6 +677,7 @@ function renderVendorDetail() {
         // measures integrated into risks tab
         case "assessments": h += _renderVendorAssessments(v); break;
         case "documents": h += _renderVendorDocs(v); break;
+        case "dora": h += _renderVendorDora(v); break;
     }
     return h;
 }
@@ -695,6 +698,7 @@ function _renderVendorForm(v) {
     h += _field("vendor.sector", "v-sector", v.sector);
     h += _field("vendor.website", "v-website", v.website);
     h += _field("vendor.siret", "v-siret", v.siret);
+    h += _field("vendor.lei", "v-lei", v.lei, "text", 'placeholder="5493001KJTIIGC8Y1R12" maxlength="20"');
     h += '</div>';
     // Logo
     h += '<div class="form-row"><label>' + t("vendor.logo") + '</label>';
@@ -736,6 +740,7 @@ function _renderVendorForm(v) {
     h += _field("vendor.contract_end", "v-cend", ct.end_date, "date");
     h += _field("vendor.review_date", "v-creview", ct.review_date, "date");
     h += '</div>';
+
 
     // ── Classification (2 columns: Dépendance | Pénétration) ──
     h += '<div class="form-section">' + t("vendor.section_classification") + '</div>';
@@ -1120,15 +1125,17 @@ function addMeasureForRisk(vendorIdx, riskIdx) {
     if (!v.measures) v.measures = [];
     var nextNum = v.measures.length + 1;
     var mId = v.id + "-M" + String(nextNum).padStart(2, "0");
-    v.measures.push({
-        id: mId, mesure: desc, details: "", type: "Contractuelle", statut: "planifie",
+    var newM = {
+        id: mId, vendor_id: v.id, mesure: desc, details: "", type: "Contractuelle", statut: "planifie",
         responsable: "", echeance: "", ref_socle: "", effet: ""
-    });
+    };
+    v.measures.push(newM);
+    _persistCreate("measure", newM);
     // Link to risk
     var current = r.linked_measures || "";
     var newRef = mId + " - " + desc;
     r.linked_measures = current ? current + ", " + newRef : newRef;
-    _persist("vendor", v.id, { measures: v.measures });
+    _persist("risk", r.id, { linked_measures: r.linked_measures });
     renderPanel();
 }
 window.addMeasureForRisk = addMeasureForRisk;
@@ -1144,11 +1151,12 @@ function addVendorMeasure(vendorIdx) {
     var nextNum = v.measures.length + 1;
     var newMeasure = {
         id: v.id + "-M" + String(nextNum).padStart(2, "0"),
+        vendor_id: v.id,
         mesure: "", details: "", type: "Contractuelle", statut: "planifie",
         responsable: "", echeance: "", ref_socle: "", effet: ""
     };
     v.measures.push(newMeasure);
-    _persist("vendor", v.id, { measures: v.measures });
+    _persistCreate("measure", newMeasure);
     renderPanel();
 }
 window.addVendorMeasure = addVendorMeasure;
@@ -1156,8 +1164,11 @@ window.addVendorMeasure = addVendorMeasure;
 function updateVendorMeasure(vendorIdx, measureIdx, field, value) {
     var v = D.vendors[vendorIdx];
     if (!v || !v.measures || !v.measures[measureIdx]) return;
-    v.measures[measureIdx][field] = value;
-    _persist("vendor", v.id, { measures: v.measures });
+    var m = v.measures[measureIdx];
+    m[field] = value;
+    var patch = {};
+    patch[field] = value;
+    _persist("measure", m.id, patch);
     if (field === "echeance" || field === "statut") {
         renderPanel();
     }
@@ -1168,8 +1179,9 @@ function deleteVendorMeasure(vendorIdx, measureIdx) {
     var v = D.vendors[vendorIdx];
     if (!v || !v.measures) return;
     if (!confirm(t("measure.confirm_delete"))) return;
+    var removed = v.measures[measureIdx];
     v.measures.splice(measureIdx, 1);
-    _persist("vendor", v.id, { measures: v.measures });
+    if (removed && removed.id) _persistDelete("measure", removed.id);
     renderPanel();
 }
 window.deleteVendorMeasure = deleteVendorMeasure;
@@ -1510,33 +1522,38 @@ function acceptAiSuggestion(idx) {
         (s.measures || []).forEach(function(m) {
             var mNum = v.measures.length + 1;
             var mId = v.id + "-M" + String(mNum).padStart(2, "0");
-            v.measures.push({
-                id: mId, mesure: m.mesure || m.measure || "", details: m.details || "",
+            var newM = {
+                id: mId, vendor_id: v.id, mesure: m.mesure || m.measure || "", details: m.details || "",
                 type: m.type || "Contractuelle", statut: "planifie",
                 responsable: m.responsable || "", echeance: "", ref_socle: "", effet: ""
-            });
+            };
+            v.measures.push(newM);
+            _persistCreate("measure", newM);
             var cur = risk.linked_measures || "";
             risk.linked_measures = cur ? cur + ", " + mId + " - " + (m.mesure || "") : mId + " - " + (m.mesure || "");
         });
+        _persistCreate("risk", risk);
     } else {
         // Create measure and link to risk
         var mNum = v.measures.length + 1;
         var mId = v.id + "-M" + String(mNum).padStart(2, "0");
-        v.measures.push({
-            id: mId, mesure: s.mesure || s.measure || "", details: s.details || "",
+        var newM2 = {
+            id: mId, vendor_id: v.id, mesure: s.mesure || s.measure || "", details: s.details || "",
             type: s.type || "Contractuelle", statut: "planifie",
             responsable: s.responsable || "", echeance: "", ref_socle: "", effet: ""
-        });
+        };
+        v.measures.push(newM2);
+        _persistCreate("measure", newM2);
         if (ctx.riskIdx != null) {
             var r = D.risks[ctx.riskIdx];
             if (r) {
                 var cur = r.linked_measures || "";
                 r.linked_measures = cur ? cur + ", " + mId + " - " + (s.mesure || "") : mId + " - " + (s.mesure || "");
+                _persist("risk", r.id, { linked_measures: r.linked_measures });
             }
         }
     }
 
-    _autoSave();
     // Remove card from UI
     var card = document.getElementById("ai-card-" + idx);
     if (card) card.remove();
@@ -1638,7 +1655,10 @@ function _renderVendorAssessments(v) {
         h += '<span style="font-size:0.82em;color:var(--gray-dark)">' + esc(title) + '</span>';
         h += '<span class="evalv2-status evalv2-status-' + esc(statusKey) + '">' + esc(label) + '</span>';
         h += '</div>';
+        h += '<div style="display:flex;align-items:center;gap:8px">';
         h += '<span style="font-size:0.78em;color:var(--gray-dark)">' + esc(a.date || "") + '</span>';
+        h += '<button class="btn-del" style="padding:2px 8px;font-size:0.78em" data-click="deleteAssessment" data-args=\'' + _da(a.id) + '\' data-stop title="' + esc(t("vendor.delete")) + '">\u00d7</button>';
+        h += '</div>';
         h += '</div>';
         // Progress bar + score
         h += '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">';
@@ -2234,7 +2254,9 @@ function addVendor() {
         logo: "",
         contact: { name: "", email: "", phone: "" },
         internal_contact: { name: "", email: "" },
+        lei: "",
         contract: { services: "", start_date: "", end_date: "", review_date: "" },
+        arrangements: [],
         classification: {
             ops_impact: 0, processes: 0, replace_difficulty: 0,
             data_sensitivity: 0, integration: 0, regulatory_impact: 0,
@@ -2277,6 +2299,7 @@ function _autoSaveVendorField() {
         v.contact = { name: el("v-cname"), email: el("v-cemail") };
         v.internal_contact = { name: el("v-icname"), email: el("v-icemail") };
         v.contract = { services: el("v-services"), start_date: el("v-cstart"), end_date: el("v-cend"), review_date: el("v-creview") };
+        v.lei = el("v-lei");
         v.classification = {
             ops_impact: parseInt(el("v-cls-ops")) || 0,
             processes: parseInt(el("v-cls-proc")) || 0,
@@ -2296,7 +2319,7 @@ function _autoSaveVendorField() {
         v.notes = el("v-notes");
         _persist("vendor", v.id, {
             name: v.name, legal_entity: v.legal_entity, country: v.country,
-            sector: v.sector, website: v.website, siret: v.siret,
+            sector: v.sector, website: v.website, siret: v.siret, lei: v.lei,
             contact: v.contact, internal_contact: v.internal_contact,
             contract: v.contract, classification: v.classification,
             exposure: v.exposure, status: v.status, notes: v.notes
@@ -3679,7 +3702,7 @@ function _touchAssessment(a) {
     a.completion_rate = stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0;
     a.score = _computeAssessmentV2Score(a);
     if (a.completion_rate > 0 && a.status === "draft") a.status = "in_progress";
-    _persist("assessment", a.id, { score: a.score, completion_rate: a.completion_rate, status: a.status });
+    _persist("assessment", a.id, { score: a.score, completion_rate: a.completion_rate, status: a.status, responses: a.responses });
 }
 
 function _setCoverage(assessId, questionId, coverage) {
@@ -3970,8 +3993,9 @@ function _materializeActionPlans(a) {
         (r.action_plans || []).forEach(function(ap) {
             var existingId = v.id + "-AP-" + r.question_id + "-" + ap.id;
             if (v.measures.some(function(m) { return m.id === existingId; })) return;
-            v.measures.push({
+            var newM = {
                 id: existingId,
+                vendor_id: v.id,
                 mesure: ap.title || ("Action plan " + r.question_id),
                 details: ap.description || "",
                 type: "Organisationnelle",
@@ -3981,7 +4005,9 @@ function _materializeActionPlans(a) {
                 source: "vendor_engagement",
                 source_assessment_id: a.id,
                 source_question_id: r.question_id
-            });
+            };
+            v.measures.push(newM);
+            _persistCreate("measure", newM);
         });
     });
 }
@@ -5265,16 +5291,38 @@ function _normalizeCoverage(raw) {
 // GLOBAL MEASURES REGISTRY
 // ═══════════════════════════════════════════════════════════════
 
-var _editingMeasure = null; // { vendorIdx, measureIdx, returnTo }
+var _editingMeasure = null; // kept for legacy paths (risks tab)
+
+function _vendorMeasureStatusBadge(statut) {
+    var palette = {
+        planifie:  "background:#dbeafe;color:#1e40af",
+        en_cours:  "background:#fef3c7;color:#92400e",
+        termine:   "background:#dcfce7;color:#166534"
+    };
+    var style = palette[statut] || palette.planifie;
+    var label = t("measure." + (statut || "planifie")) || statut || "";
+    return '<span class="sev-badge" style="' + style + '">' + esc(label) + '</span>';
+}
 
 function renderGlobalMeasures() {
-    // Editing a specific measure?
+    // Editing a specific measure? (legacy path used by risks tab)
     if (_editingMeasure) return _renderMeasureEditForm();
 
     var allMeasures = [];
     D.vendors.forEach(function(v, vi) {
         (v.measures || []).forEach(function(m, mi) {
-            allMeasures.push({ vendor: v.name, vendorIdx: vi, measureIdx: mi, measure: m });
+            allMeasures.push({
+                id: m.id,
+                vendor: v.name,
+                vendor_id: v.id,
+                vendorIdx: vi,
+                measureIdx: mi,
+                mesure: m.mesure || "",
+                type: m.type || "",
+                statut: m.statut || "",
+                responsable: m.responsable || "",
+                echeance: m.echeance || ""
+            });
         });
     });
 
@@ -5291,39 +5339,182 @@ function renderGlobalMeasures() {
 
     var h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
     h += '<h2>' + t("nav.measures") + ' (' + allMeasures.length + ')</h2>';
+    h += '<div style="display:flex;gap:8px">';
+    h += '<button class="btn-add" data-click="_refreshMeasures" title="Rafraîchir">&#x21bb;</button>';
     if (unlinkedCount > 0) {
         h += '<button class="btn-del" data-click="deleteUnlinkedMeasures">' + t("measure.delete_unlinked") + ' (' + unlinkedCount + ')</button>';
     }
-    h += '</div>';
+    h += '</div></div>';
     if (!allMeasures.length) return h + '<div class="empty-state">' + t("measure.empty") + '</div>';
 
-    h += colsButton("global-measures-table");
-    h += '<table id="global-measures-table"><thead><tr>';
-    h += '<th' + hd("vendor") + '>' + t("nav.vendors") + '</th>';
-    h += '<th' + hd("id") + '>ID</th>';
-    h += '<th' + hd("mesure") + '>' + t("measure.col_mesure") + '</th>';
-    h += '<th' + hd("type") + '>' + t("measure.col_type") + '</th>';
-    h += '<th' + hd("statut") + '>' + t("measure.col_statut") + '</th>';
-    h += '<th' + hd("resp") + '>' + t("measure.col_responsable") + '</th>';
-    h += '<th' + hd("deadline") + '>' + t("measure.col_echeance") + '</th>';
-    h += '</tr></thead><tbody>';
+    if (window.ct_table) {
+        h += ct_table.render({
+            rows: allMeasures,
+            rowKey: "id",
+            onRowClick: "_editVendorMeasureRow",
+            bulk: { scope: "vendor-measures" },
+            columns: [
+                { key: "vendor", label: t("nav.vendors"),
+                  render: function(r) { return '<span class="fw-600">' + esc(r.vendor) + '</span>'; } },
+                { key: "id", label: "ID", width: "110px" },
+                { key: "mesure", label: t("measure.col_mesure"),
+                  render: function(r) { return esc(r.mesure); } },
+                { key: "type", label: t("measure.col_type"), width: "140px",
+                  render: function(r) { return esc(r.type); } },
+                { key: "statut", label: t("measure.col_statut"), width: "120px",
+                  render: function(r) { return _vendorMeasureStatusBadge(r.statut); } },
+                { key: "responsable", label: t("measure.col_responsable"),
+                  render: function(r) { return esc(r.responsable); } },
+                { key: "echeance", label: t("measure.col_echeance"), width: "120px",
+                  render: function(r) { return esc(r.echeance); } }
+            ]
+        });
 
-    allMeasures.forEach(function(item) {
-        var m = item.measure;
-        var _statutMap = {"termine":"green","en_cours":"orange","planifie":"blue","completed":"green"};
-        h += '<tr style="cursor:pointer" data-click="editMeasure" data-args=\'' + _da(item.vendorIdx, item.measureIdx, "measures") + '\'>';
-        h += '<td' + hd("vendor") + ' class="fw-600">' + esc(item.vendor) + '</td>';
-        h += '<td' + hd("id") + '>' + esc(m.id) + '</td>';
-        h += '<td' + hd("mesure") + '>' + esc(m.mesure || "") + '</td>';
-        h += '<td' + hd("type") + '>' + esc(m.type || "") + '</td>';
-        h += '<td' + hd("statut") + '>' + ctBadge(t("measure." + (m.statut || "planifie")), _statutMap[m.statut] || "gray") + '</td>';
-        h += '<td' + hd("resp") + '>' + esc(m.responsable || "") + '</td>';
-        h += '<td' + hd("deadline") + '>' + esc(m.echeance || "") + '</td>';
-        h += '</tr>';
-    });
-    h += '</tbody></table>';
+        setTimeout(function() {
+            if (!window.ct_bulkbar) return;
+            ct_bulkbar.attach({
+                scope: "vendor-measures",
+                label: t("measure.selected_n") || "{n} mesure(s) sélectionnée(s)",
+                actions: [
+                    { id: "done", icon: "check", label: t("measure.termine") || "Terminé", variant: "success",
+                      onClick: "_bulkVendorMeasuresDone" },
+                    { id: "delete", icon: "trash", label: t("btn_delete") || "Supprimer", danger: true,
+                      onClick: "_bulkVendorMeasuresDelete",
+                      confirm: { title: "Supprimer {n} mesure(s) ?", message: "Cette action est irréversible." } }
+                ]
+            });
+            ct_bulkbar.update("vendor-measures");
+        }, 0);
+    } else {
+        // Fallback: basic HTML table (opensource without ct_table)
+        h += colsButton("global-measures-table");
+        h += '<table id="global-measures-table"><thead><tr>';
+        h += '<th' + hd("vendor") + '>' + t("nav.vendors") + '</th>';
+        h += '<th' + hd("id") + '>ID</th>';
+        h += '<th' + hd("mesure") + '>' + t("measure.col_mesure") + '</th>';
+        h += '<th' + hd("type") + '>' + t("measure.col_type") + '</th>';
+        h += '<th' + hd("statut") + '>' + t("measure.col_statut") + '</th>';
+        h += '<th' + hd("resp") + '>' + t("measure.col_responsable") + '</th>';
+        h += '<th' + hd("deadline") + '>' + t("measure.col_echeance") + '</th>';
+        h += '</tr></thead><tbody>';
+
+        allMeasures.forEach(function(item) {
+            h += '<tr style="cursor:pointer" data-click="editMeasure" data-args=\'' + _da(item.vendorIdx, item.measureIdx, "measures") + '\'>';
+            h += '<td' + hd("vendor") + ' class="fw-600">' + esc(item.vendor) + '</td>';
+            h += '<td' + hd("id") + '>' + esc(item.id) + '</td>';
+            h += '<td' + hd("mesure") + '>' + esc(item.mesure) + '</td>';
+            h += '<td' + hd("type") + '>' + esc(item.type) + '</td>';
+            h += '<td' + hd("statut") + '>' + _vendorMeasureStatusBadge(item.statut) + '</td>';
+            h += '<td' + hd("resp") + '>' + esc(item.responsable) + '</td>';
+            h += '<td' + hd("deadline") + '>' + esc(item.echeance) + '</td>';
+            h += '</tr>';
+        });
+        h += '</tbody></table>';
+    }
+
     return h;
 }
+
+window._refreshMeasures = function() {
+    var pid = (typeof getActiveProjectId === "function") ? getActiveProjectId() : null;
+    if (pid && window.VendorAPI && VendorAPI.get) {
+        VendorAPI.get(pid).then(function(proj) {
+            if (proj && proj.data) {
+                Object.keys(proj.data).forEach(function(k) { D[k] = proj.data[k]; });
+            }
+            showStatus("Données rafraîchies");
+            renderPanel();
+        }).catch(function(e) { showStatus("Erreur : " + (e.message || e), true); });
+    } else {
+        window.location.reload();
+    }
+};
+
+window._editVendorMeasureRow = function(row) {
+    if (!window.ct_measure_modal) return;
+    var v = D.vendors[row.vendorIdx];
+    if (!v || !v.measures || !v.measures[row.measureIdx]) return;
+    var m = v.measures[row.measureIdx];
+
+    var typeOpts = ["Contractuelle", "Technique", "Organisationnelle", "Surveillance"]
+        .map(function(x) { return { value: x, label: x }; });
+    var statusOpts = [
+        { value: "planifie", label: t("measure.planifie") || "Planifié" },
+        { value: "en_cours", label: t("measure.en_cours") || "En cours" },
+        { value: "termine",  label: t("measure.termine")  || "Terminé" }
+    ];
+
+    ct_measure_modal.open(m, {
+        title: m.id + " — " + v.name,
+        fieldMap: { title: "mesure", description: "details" },
+        typeOptions: typeOpts,
+        statusOptions: statusOpts,
+        defaultStatus: "planifie",
+        ownerPicker: { pickerId: "vendor-measure-owner", directoryUrl: "api/directory" },
+        extraFields: [
+            { key: "ref_socle", label: t("measure.ref_socle") || "Ref socle", type: "text", value: m.ref_socle || "" },
+            { key: "effet",     label: t("measure.effet")     || "Effet",     type: "textarea", rows: 2, value: m.effet || "" }
+        ],
+        onDelete: function() {
+            ct_modal.confirm({
+                title: t("measure.confirm_delete") || "Supprimer cette mesure ?",
+                message: "Cette action est irréversible.",
+                danger: true
+            }).then(function(ok) {
+                if (!ok) return;
+                v.measures.splice(row.measureIdx, 1);
+                if (typeof _persistDelete === "function") _persistDelete("measure", m.id);
+                showStatus("Mesure supprimée");
+                renderPanel();
+            });
+        }
+    }).then(function(result) {
+        if (!result || result.__deleted) return;
+        var patch = {};
+        ["mesure", "details", "type", "statut", "responsable", "echeance", "ref_socle", "effet"].forEach(function(k) {
+            if (result[k] !== undefined && result[k] !== m[k]) { m[k] = result[k]; patch[k] = result[k]; }
+        });
+        if (Object.keys(patch).length) _persist("measure", m.id, patch);
+        showStatus(t("measure.saved") || "Mesure enregistrée");
+        renderPanel();
+    });
+};
+
+window._bulkVendorMeasuresDone = function(scope) {
+    var ids = Array.from(ct_bulkbar.getSelection(scope));
+    if (!ids.length) return;
+    var count = 0;
+    D.vendors.forEach(function(v) {
+        (v.measures || []).forEach(function(m) {
+            if (ids.indexOf(m.id) >= 0) {
+                m.statut = "termine";
+                count++;
+                _persist("measure", m.id, { statut: "termine" });
+            }
+        });
+    });
+    ct_bulkbar.clear(scope);
+    showStatus(count + " mesure(s) marquée(s) terminée(s)");
+    renderPanel();
+};
+
+window._bulkVendorMeasuresDelete = function(scope) {
+    var ids = Array.from(ct_bulkbar.getSelection(scope));
+    if (!ids.length) return;
+    var count = 0;
+    D.vendors.forEach(function(v) {
+        if (!v.measures) return;
+        var before = v.measures.length;
+        v.measures = v.measures.filter(function(m) { return ids.indexOf(m.id) < 0; });
+        count += before - v.measures.length;
+    });
+    if (typeof _persistDelete === "function") {
+        ids.forEach(function(mid) { _persistDelete("measure", mid); });
+    }
+    ct_bulkbar.clear(scope);
+    showStatus(count + " mesure(s) supprimée(s)");
+    renderPanel();
+};
 
 function deleteUnlinkedMeasures() {
     var count = 0;
@@ -5658,9 +5849,31 @@ function _getDoraThresholds() {
     };
 }
 
+function _doraEntityTypeOptions(selected) {
+    var types = [
+        ["", "—"],
+        ["credit_institution", "Credit institution"],
+        ["payment_institution", "Payment institution"],
+        ["investment_firm", "Investment firm"],
+        ["insurance", "Insurance / Reinsurance"],
+        ["aifm", "AIFM"],
+        ["ucits", "UCITS management company"],
+        ["csd", "CSD"],
+        ["ccp", "CCP"],
+        ["crypto_asset", "Crypto-asset service provider"],
+        ["other", "Other"],
+    ];
+    var h = "";
+    types.forEach(function(t) {
+        h += '<option value="' + t[0] + '"' + (selected === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>';
+    });
+    return h;
+}
+
 function _doraSettingsHTML() {
     var th = _getDoraThresholds();
     var doraOn = _isDoraEnabled();
+    var ent = D.dora_entity || {};
     return '<div class="settings-section" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">' +
         '<div class="settings-label">' + t("settings.dora_section") + '</div>' +
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
@@ -5675,6 +5888,19 @@ function _doraSettingsHTML() {
                 '<div style="flex:1"><div class="settings-label fs-sm" style="margin-bottom:4px">' + t("settings.dora_avg_score") + '</div>' +
                 '<input type="number" class="settings-input" id="settings-dora-avg" value="' + th.avgScore + '" min="0.5" max="4" step="0.5" style="width:100%"></div>' +
             '</div>' +
+            '<div class="settings-label fs-sm" style="margin-top:12px;margin-bottom:6px">' + t("settings.dora_entity_section") + '</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+                '<input class="settings-input" id="settings-dora-entity-name" placeholder="' + t("settings.dora_entity_name") + '" value="' + esc(ent.name) + '" style="flex:2;min-width:160px">' +
+                '<input class="settings-input" id="settings-dora-entity-lei" placeholder="LEI" value="' + esc(ent.lei) + '" style="flex:1;min-width:120px">' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">' +
+                '<select class="settings-input" id="settings-dora-entity-type" style="flex:1;min-width:140px">' +
+                    _doraEntityTypeOptions(ent.type) +
+                '</select>' +
+                '<input class="settings-input" id="settings-dora-entity-country" placeholder="' + t("settings.dora_entity_country") + '" value="' + esc(ent.country) + '" style="width:60px">' +
+                '<input class="settings-input" id="settings-dora-entity-authority" placeholder="' + t("settings.dora_entity_authority") + '" value="' + esc(ent.authority) + '" style="flex:1;min-width:100px">' +
+            '</div>' +
+            '<button class="ai-btn-close" style="width:100%;padding:8px;font-size:0.85em;margin-top:12px" id="settings-dora-export-roi">' + t("settings.dora_export_roi") + '</button>' +
         '</div>' +
     '</div>';
 }
@@ -5683,6 +5909,12 @@ function _wireDoraSettings() {
     var toggle = document.getElementById("settings-dora-toggle");
     if (toggle) toggle.onchange = function() {
         document.getElementById("settings-dora-fields").style.display = this.checked ? "" : "none";
+    };
+    var exportBtn = document.getElementById("settings-dora-export-roi");
+    if (exportBtn) exportBtn.onclick = function() {
+        _saveDoraSettings();
+        if (typeof _aiClosePanel === "function") _aiClosePanel();
+        _exportDoraROI();
     };
 }
 
@@ -5693,6 +5925,16 @@ function _saveDoraSettings() {
     var a = document.getElementById("settings-dora-avg");
     if (c) localStorage.setItem("tprm_dora_max_criteria", c.value);
     if (a) localStorage.setItem("tprm_dora_avg_score", a.value);
+    // Save entity info into D
+    var el = function(id) { var e = document.getElementById(id); return e ? e.value.trim() : ""; };
+    D.dora_entity = {
+        name: el("settings-dora-entity-name"),
+        lei: el("settings-dora-entity-lei"),
+        type: el("settings-dora-entity-type"),
+        country: el("settings-dora-entity-country").toUpperCase(),
+        authority: el("settings-dora-entity-authority"),
+    };
+    _autoSave();
 }
 
 // _autoSave, _loadAutoSave, newAnalysis provided by cisotoolbox.js
@@ -5710,10 +5952,326 @@ function _initDataAndRender(cb) {
 
 window.AI_APP_CONFIG = {
     storagePrefix: "tprm",
-    settingsExtraHTML: function() { return _doraSettingsHTML() + _customQuestionnaireHTML() + _demoSettingsHTML(); },
-    onSettingsRendered: function() { _wireDoraSettings(); _wireCustomQuestionnaire(); _wireDemoSettings(); },
+    settingsExtraHTML: function() {
+        var h = (typeof _demoSettingsHTML === "function" ? _demoSettingsHTML() : "");
+        return _doraSettingsHTML() + _customQuestionnaireHTML() + h;
+    },
+    onSettingsRendered: function() {
+        _wireDoraSettings(); _wireCustomQuestionnaire();
+        if (typeof _wireDemoSettings === "function") _wireDemoSettings();
+    },
     onSettingsSaved: function() { _saveDoraSettings(); renderAll(); }
 };
+
+// ── DORA — Vendor arrangements tab ───────────────────────────
+
+var _ICT_TYPES = [
+    ["cloud_iaas", "Cloud — IaaS"], ["cloud_paas", "Cloud — PaaS"], ["cloud_saas", "Cloud — SaaS"],
+    ["data_centre", "Data centre"], ["network", "Network"], ["security", "Security"],
+    ["software_dev", "Software development"], ["data_analytics", "Data analytics"], ["other", "Other"],
+];
+var _SUBSTIT = [
+    ["easily", "vendor.substit_easily"], ["with_difficulty", "vendor.substit_difficult"],
+    ["not_substitutable", "vendor.substit_not"],
+];
+var _IMPACT = [["low", "misc.low"], ["medium", "misc.medium"], ["high", "misc.high"]];
+
+function _renderVendorDora(v) {
+    if (!v.arrangements) v.arrangements = [];
+    var isDoraCritical = _isDoraICTCritical(v.classification || {});
+    var h = '<div class="tprm-form">';
+
+    // DORA status banner
+    if (isDoraCritical) {
+        h += '<div style="padding:10px 14px;background:var(--red-bg, #fef2f2);border-radius:6px;font-size:0.88em;margin-bottom:12px">';
+        h += '<span class="dora-badge" style="margin-right:6px">' + t("vendor.dora_critical") + '</span> ';
+        h += t("vendor.function_critical");
+        h += '</div>';
+    }
+
+    // Arrangement list
+    h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+    h += '<strong>' + t("dora.arrangements_title") + '</strong>';
+    h += '<span style="flex:1"></span>';
+    h += '<button class="btn-add" data-click="_addArrangement">' + t("dora.add_arrangement") + '</button>';
+    h += '</div>';
+
+    if (v.arrangements.length === 0) {
+        h += '<p class="text-muted fs-sm">' + t("dora.no_arrangements") + '</p>';
+    } else {
+        v.arrangements.forEach(function(arr, idx) {
+            var ictLabel = "";
+            _ICT_TYPES.forEach(function(it) { if (it[0] === arr.ict_service_type) ictLabel = it[1]; });
+            h += '<details class="dora-arrangement"' + (idx === v.arrangements.length - 1 ? ' open' : '') + '>';
+            h += '<summary>';
+            h += '<strong>' + esc(arr.ref || "ARR-" + String(idx + 1).padStart(3, "0")) + '</strong>';
+            h += ' — ' + (ictLabel || t("dora.no_type"));
+            if (arr.function_supported) h += ' — <em>' + esc(arr.function_supported) + '</em>';
+            h += '<button class="btn-add" style="float:right;background:var(--red);color:white;font-size:0.72em;padding:2px 8px" data-click="_removeArrangement" data-args=\'' + _da(idx) + '\' data-stop>&#10005;</button>';
+            h += '</summary>';
+            h += '<div class="form-grid" style="margin-top:8px">';
+            // ICT service type
+            h += '<div class="form-row"><label>' + t("vendor.ict_service_type") + '</label><select id="arr-ict-' + idx + '" data-change="_saveArrangements">';
+            h += '<option value="">—</option>';
+            _ICT_TYPES.forEach(function(it) {
+                h += '<option value="' + it[0] + '"' + (arr.ict_service_type === it[0] ? ' selected' : '') + '>' + esc(it[1]) + '</option>';
+            });
+            h += '</select></div>';
+            // Function supported
+            h += '<div class="form-row"><label>' + t("vendor.function_supported") + '</label>';
+            h += '<input id="arr-func-' + idx + '" value="' + esc(arr.function_supported || "") + '" data-input="_saveArrangements"></div>';
+            // Substitutability
+            h += '<div class="form-row"><label>' + t("vendor.substitutability") + '</label><select id="arr-substit-' + idx + '" data-change="_saveArrangements">';
+            h += '<option value="">—</option>';
+            _SUBSTIT.forEach(function(s) {
+                h += '<option value="' + s[0] + '"' + (arr.substitutability === s[0] ? ' selected' : '') + '>' + t(s[1]) + '</option>';
+            });
+            h += '</select></div>';
+            // Impact
+            h += '<div class="form-row"><label>' + t("vendor.discontinuation_impact") + '</label><select id="arr-impact-' + idx + '" data-change="_saveArrangements">';
+            h += '<option value="">—</option>';
+            _IMPACT.forEach(function(im) {
+                h += '<option value="' + im[0] + '"' + (arr.discontinuation_impact === im[0] ? ' selected' : '') + '>' + t(im[1]) + '</option>';
+            });
+            h += '</select></div>';
+            // Contract type
+            h += '<div class="form-row"><label>' + t("vendor.contract_type") + '</label><select id="arr-ctype-' + idx + '" data-change="_saveArrangements">';
+            h += '<option value="">—</option>';
+            h += '<option value="outsourcing"' + (arr.contract_type === "outsourcing" ? ' selected' : '') + '>' + t("vendor.contract_outsourcing") + '</option>';
+            h += '<option value="non_outsourcing"' + (arr.contract_type === "non_outsourcing" ? ' selected' : '') + '>' + t("vendor.contract_non_outsourcing") + '</option>';
+            h += '</select></div>';
+            // Annual cost
+            h += '<div class="form-row"><label>' + t("vendor.annual_cost") + '</label>';
+            h += '<input id="arr-cost-' + idx + '" value="' + esc(arr.annual_cost || "") + '" data-input="_saveArrangements"></div>';
+            // Notice period
+            h += '<div class="form-row"><label>' + t("vendor.notice_period") + '</label>';
+            h += '<input id="arr-notice-' + idx + '" value="' + esc(arr.notice_period || "") + '" data-input="_saveArrangements"></div>';
+            // Last audit
+            h += '<div class="form-row"><label>' + t("vendor.last_audit_date") + '</label>';
+            h += '<input type="date" id="arr-audit-' + idx + '" value="' + esc(arr.last_audit_date || "") + '" data-input="_saveArrangements"></div>';
+            // Data locations
+            h += '<div class="form-row"><label>' + t("vendor.data_locations") + '</label>';
+            h += '<input id="arr-dataloc-' + idx + '" value="' + esc((arr.data_locations || []).join(", ")) + '" placeholder="FR, DE, US" data-input="_saveArrangements">';
+            h += '</div>';
+            // Exit plan
+            h += '<div class="form-row"><label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-weight:600">';
+            h += '<input type="checkbox" id="arr-exit-' + idx + '"' + (arr.exit_plan ? ' checked' : '') + ' data-change="_saveArrangements">';
+            h += t("vendor.exit_plan") + '</label></div>';
+            // Description
+            h += '<div class="form-row"><label>' + t("vendor.services") + '</label>';
+            h += '<input id="arr-desc-' + idx + '" value="' + esc(arr.description || "") + '" data-input="_saveArrangements"></div>';
+            h += '</div></details>';
+        });
+    }
+    h += '</div>';
+    return h;
+}
+
+var _arrSaveTimer = null;
+window._saveArrangements = function() {
+    if (_arrSaveTimer) clearTimeout(_arrSaveTimer);
+    _arrSaveTimer = setTimeout(function() {
+        var v = D.vendors[_selectedVendor];
+        if (!v || !v.arrangements) return;
+        var el = function(id) { var e = document.getElementById(id); return e ? e.value.trim() : ""; };
+        var chk = function(id) { var e = document.getElementById(id); return e ? e.checked : false; };
+        v.arrangements.forEach(function(arr, idx) {
+            arr.ict_service_type = el("arr-ict-" + idx);
+            arr.function_supported = el("arr-func-" + idx);
+            arr.substitutability = el("arr-substit-" + idx);
+            arr.discontinuation_impact = el("arr-impact-" + idx);
+            arr.annual_cost = el("arr-cost-" + idx);
+            arr.description = el("arr-desc-" + idx);
+            arr.contract_type = el("arr-ctype-" + idx);
+            arr.notice_period = el("arr-notice-" + idx);
+            arr.last_audit_date = el("arr-audit-" + idx);
+            arr.exit_plan = chk("arr-exit-" + idx);
+            var locStr = el("arr-dataloc-" + idx);
+            arr.data_locations = locStr ? locStr.split(",").map(function(s){return s.trim().toUpperCase();}).filter(Boolean) : [];
+            arr.ref = "ARR-" + v.id + "-" + String(idx + 1).padStart(2, "0");
+        });
+        _persist("vendor", v.id, { arrangements: v.arrangements });
+    }, 400);
+};
+
+window._addArrangement = function() {
+    var v = D.vendors[_selectedVendor];
+    if (!v) return;
+    if (!v.arrangements) v.arrangements = [];
+    v.arrangements.push({
+        ref: "ARR-" + v.id + "-" + String(v.arrangements.length + 1).padStart(2, "0"),
+        ict_service_type: "", function_supported: "", substitutability: "",
+        discontinuation_impact: "", annual_cost: "", description: "",
+        contract_type: "", notice_period: "", exit_plan: false,
+        last_audit_date: "", data_locations: [],
+    });
+    _persist("vendor", v.id, { arrangements: v.arrangements });
+    renderPanel();
+};
+
+window._removeArrangement = function(idx) {
+    var v = D.vendors[_selectedVendor];
+    if (!v || !v.arrangements) return;
+    v.arrangements.splice(idx, 1);
+    _persist("vendor", v.id, { arrangements: v.arrangements });
+    renderPanel();
+};
+
+// ── DORA ROI Export (Excel multi-sheet) ───────────────────────
+
+function _exportDoraROI() {
+    var ent = D.dora_entity || {};
+    if (!ent.name || !ent.lei) {
+        showStatus(t("dora.export_missing_entity")); return;
+    }
+    // Load ExcelJS from CDN if not already loaded
+    if (typeof ExcelJS === "undefined") {
+        var s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+        s.onload = function() { _buildDoraROI(ent); };
+        s.onerror = function() { showStatus("ExcelJS load failed"); };
+        document.head.appendChild(s);
+    } else {
+        _buildDoraROI(ent);
+    }
+}
+
+function _buildDoraROI(ent) {
+    var wb = new ExcelJS.Workbook();
+    var now = new Date().toISOString().slice(0, 10);
+    var vendors = (D.vendors || []).filter(function(v) { return v.status === "active"; });
+
+    var hdrFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E79" } };
+    var hdrFont = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+    var cellFont = { size: 10 };
+
+    function addHeaders(ws, headers) {
+        var row = ws.addRow(headers);
+        row.eachCell(function(cell) {
+            cell.fill = hdrFill; cell.font = hdrFont;
+            cell.border = { bottom: { style: "thin" } };
+        });
+        headers.forEach(function(_, i) { ws.getColumn(i + 1).width = Math.max(headers[i].length + 4, 16); });
+    }
+
+    // B_01.01 — Entity maintaining the register
+    var ws1 = wb.addWorksheet("B_01.01");
+    addHeaders(ws1, ["LEI", "Entity name", "Type of entity", "Country", "Competent authority", "Reporting date"]);
+    ws1.addRow([ent.lei, ent.name, ent.type || "", ent.country || "", ent.authority || "", now]).font = cellFont;
+
+    // B_01.02 — Entities within scope (same entity for single-entity reporting)
+    var ws2 = wb.addWorksheet("B_01.02");
+    addHeaders(ws2, ["LEI", "Entity name", "Country", "Type of entity", "Head undertaking LEI"]);
+    ws2.addRow([ent.lei, ent.name, ent.country || "", ent.type || "", ""]).font = cellFont;
+
+    // Flatten: one row per arrangement (vendor × arrangement)
+    var rows = []; // {v, arr, arrRef, provId, provType, fnId}
+    var fnIdx = 0;
+    vendors.forEach(function(v) {
+        var arrs = (v.arrangements && v.arrangements.length) ? v.arrangements : [{}];
+        var provId = v.lei || v.siret || v.id;
+        var provType = v.lei ? "LEI" : (v.siret ? "National reg." : "Other");
+        arrs.forEach(function(arr) {
+            var ref = arr.ref || ("ARR-" + v.id + "-" + String(rows.length + 1).padStart(2, "0"));
+            var fn = arr.function_supported ? "FN-" + String(++fnIdx).padStart(3, "0") : "";
+            rows.push({ v: v, arr: arr, ref: ref, provId: provId, provType: provType, fnId: fn });
+        });
+    });
+
+    // B_02.01 — Contractual arrangements (general)
+    var ws3 = wb.addWorksheet("B_02.01");
+    addHeaders(ws3, [
+        "Arrangement ref", "Type (outsourcing/non-outsourcing)",
+        "Overarching arrangement", "Contract start date", "Contract end date",
+        "Notice period", "Entity LEI"
+    ]);
+    rows.forEach(function(r) {
+        var ct = r.v.contract || {};
+        ws3.addRow([r.ref, r.arr.contract_type || "", "No", ct.start_date || "", ct.end_date || "", r.arr.notice_period || "", ent.lei]).font = cellFont;
+    });
+
+    // B_02.02 — Contractual arrangements (specific)
+    var ws4 = wb.addWorksheet("B_02.02");
+    addHeaders(ws4, [
+        "Arrangement ref", "ICT service type", "Function supported",
+        "Data locations", "Annual cost/expense (EUR)",
+        "Last audit date", "Exit plan (Y/N)", "Substitutability", "Provider ID"
+    ]);
+    rows.forEach(function(r) {
+        ws4.addRow([
+            r.ref, r.arr.ict_service_type || "", r.arr.function_supported || "",
+            (r.arr.data_locations || []).join(", "), r.arr.annual_cost || "",
+            r.arr.last_audit_date || "", r.arr.exit_plan ? "Y" : "N",
+            r.arr.substitutability || "", r.provId
+        ]).font = cellFont;
+    });
+
+    // B_03.02 — Provider signing the arrangement
+    var ws5 = wb.addWorksheet("B_03.02");
+    addHeaders(ws5, ["Arrangement ref", "Provider ID", "Type of code (LEI/EUID/other)"]);
+    rows.forEach(function(r) {
+        ws5.addRow([r.ref, r.provId, r.provType]).font = cellFont;
+    });
+
+    // B_05.01 — ICT third-party service providers (one row per vendor, not per arrangement)
+    var ws6 = wb.addWorksheet("B_05.01");
+    addHeaders(ws6, ["Provider ID", "Type of code", "Legal name", "HQ country", "Ultimate parent LEI", "Total annual expense (EUR)"]);
+    var seenProviders = {};
+    vendors.forEach(function(v) {
+        var pid = v.lei || v.siret || v.id;
+        if (seenProviders[pid]) return;
+        seenProviders[pid] = true;
+        var totalCost = 0;
+        (v.arrangements || []).forEach(function(a) { totalCost += parseFloat(a.annual_cost) || 0; });
+        if (!totalCost) totalCost = parseFloat((v.contract || {}).annual_cost) || 0;
+        ws6.addRow([
+            pid, v.lei ? "LEI" : (v.siret ? "National reg." : "Other"),
+            v.legal_entity || v.name, v.country || "", "",
+            totalCost || ""
+        ]).font = cellFont;
+    });
+
+    // B_05.02 — ICT supply chain (sub-contractors)
+    var ws7 = wb.addWorksheet("B_05.02");
+    addHeaders(ws7, ["Arrangement ref", "Provider ID", "Rank in chain", "ICT service description"]);
+    rows.forEach(function(r) {
+        (r.v.sub_contractors || []).forEach(function(sub, j) {
+            var subName = typeof sub === "string" ? sub : (sub.name || "");
+            ws7.addRow([r.ref, subName, j + 2, r.arr.ict_service_type || ""]).font = cellFont;
+        });
+    });
+
+    // B_06.01 — Function identification
+    var ws8 = wb.addWorksheet("B_06.01");
+    addHeaders(ws8, ["Function ID", "Entity LEI", "Function name", "Critical or important (Y/N)", "Date of last assessment", "Recovery time objective"]);
+    var isCritMap = {};
+    rows.forEach(function(r) {
+        if (!r.fnId) return;
+        var isCrit = _isDoraICTCritical(r.v.classification || {});
+        isCritMap[r.ref] = isCrit;
+        ws8.addRow([r.fnId, ent.lei, r.arr.function_supported, isCrit ? "Y" : "N", r.arr.last_audit_date || "", ""]).font = cellFont;
+    });
+
+    // B_07.01 — Assessment (critical functions only)
+    var ws9 = wb.addWorksheet("B_07.01");
+    addHeaders(ws9, ["Arrangement ref", "Function ID", "Substitutability", "Impact of discontinuation", "Alternative providers identified (Y/N)", "Date of last risk assessment"]);
+    rows.forEach(function(r) {
+        if (!r.fnId || !isCritMap[r.ref]) return;
+        ws9.addRow([r.ref, r.fnId, r.arr.substitutability || "", r.arr.discontinuation_impact || "", "", r.arr.last_audit_date || ""]).font = cellFont;
+    });
+
+    // Download
+    wb.xlsx.writeBuffer().then(function(buf) {
+        var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "DORA_ROI_" + (ent.name || "export").replace(/[^a-zA-Z0-9]/g, "_") + "_" + now + ".xlsx";
+        a.click();
+        URL.revokeObjectURL(url);
+        showStatus(t("dora.export_success"));
+    });
+}
 
 // ── Custom questionnaire (admin only) ─────────────────────────
 
@@ -6095,8 +6653,10 @@ function aiAddVendor() {
     var nextId = "PP-" + String(D.vendors.length + 1).padStart(3, "0");
     D.vendors.push({
         id: nextId, name: name, legal_entity: "", country: "", sector: "", website: website, siret: "",
+        lei: "",
         contact: { name: "", email: "", phone: "" },
         contract: { services: "", start_date: "", end_date: "", review_date: "" },
+        arrangements: [],
         classification: { gdpr_subprocessor: false },
         certifications: [], dpa_signed: false, sub_contractors: [],
         status: "prospect", notes: ""
