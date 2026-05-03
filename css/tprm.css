@@ -29,6 +29,9 @@
 
 /* ── DORA badge ───────────────────────────────────────── */
 .dora-badge { padding: 2px 8px; border-radius: 10px; font-size: 0.65em; font-weight: 700; background: var(--violet); color: white; letter-spacing: 0.5px; }
+details.dora-arrangement { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; }
+details.dora-arrangement summary { cursor: pointer; font-size: 0.88em; padding: 4px 0; }
+details.dora-arrangement[open] summary { border-bottom: 1px solid var(--border); margin-bottom: 6px; padding-bottom: 8px; }
 
 /* ── Vendor detail tabs ───────────────────────────────── */
 .vendor-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
