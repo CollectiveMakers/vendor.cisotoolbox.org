@@ -426,6 +426,10 @@ _registerTranslations("fr", {
     "vendor.data_locations": "Lieux de traitement des données",
     "vendor.exit_plan": "Plan de sortie en place",
     "vendor.substitutability": "Substituabilité",
+    "vendor.substit_easily": "Substituable facilement",
+    "vendor.substit_difficult": "Substituable difficilement",
+    "vendor.substit_not": "Non substituable",
+    "vendor.lei": "LEI (Legal Entity Identifier)",
     "vendor.last_audit_date": "Date du dernier audit",
 
     "common.save": "Enregistrer",
