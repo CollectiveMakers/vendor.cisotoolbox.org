@@ -146,6 +146,7 @@ _registerTranslations("en", {
     "vendor.tab_risks": "Risks",
     "vendor.tab_assessments": "Assessments",
     "vendor.tab_documents": "Documents",
+    "vendor.tab_dora": "DORA",
 
     "vendor.status_prospect": "Considered",
     "vendor.status_active": "Active",
