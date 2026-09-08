@@ -237,6 +237,7 @@ select.tpl-criticality.crit-info, select.tpl-criticality.crit-major, select.tpl-
 .score-medium { color: #854d0e; }
 .score-high { color: #9a3412; }
 .score-critical { color: #991b1b; }
+.score-unknown { color: var(--ct-ink-2); }
 :root[data-theme="dark"] .score-low { color: var(--ct-low-ink); }
 :root[data-theme="dark"] .score-medium { color: var(--ct-medium-ink); }
 :root[data-theme="dark"] .score-high { color: var(--ct-high-ink); }
