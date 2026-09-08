@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.calculations import compute_threat_level, compute_tier
 from src.database import get_db
 from src.models import Project, ProjectMetadata, Vendor, VendorAssessment, VendorMeasure
 
@@ -62,37 +63,29 @@ def _check_service_token(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Invalid service token")
 
 
-def _compute_menace(exposure: dict) -> tuple[float, str]:
-    """Compute threat score from exposure JSONB using (D*P)/(M*C) formula.
+# FR labels for the canonical english tier keys (see calculations.compute_tier).
+_TIER_FR = {"critical": "Critique", "high": "Elevee", "medium": "Moderee",
+            "low": "Faible", "unassessed": "NonEvaluee"}
+_TIER_KEY = {v: k for k, v in _TIER_FR.items()}
 
-    Returns (score, tier_label).
-    Thresholds: >=4 critical, >=2 high, >=1 medium, <1 low.
+
+def _compute_menace(exposure: dict) -> tuple[float | None, str]:
+    """Threat score from exposure JSONB, via the canonical (D*P)/(M*C) formula.
+
+    Returns ``(score, tier_label_fr)``. ``score`` is ``None`` and the tier is
+    ``"NonEvaluee"`` when the exposure is not fully assessed — an unassessed
+    vendor is a distinct state, never a false "Faible".
     """
     dep = exposure.get("dependance", 0) or 0
     pen = exposure.get("penetration", 0) or 0
     mat = exposure.get("maturite", 0) or 0
     conf = exposure.get("confiance", 0) or 0
-
-    if not dep or not pen or not mat or not conf:
-        return (0.0, "Faible")
-
-    threat = round((dep * pen) / (mat * conf), 2)
-
-    if threat >= 4:
-        tier = "Critique"
-    elif threat >= 2:
-        tier = "Elevee"
-    elif threat >= 1:
-        tier = "Moderee"
-    else:
-        tier = "Faible"
-
-    return (threat, tier)
+    score = compute_threat_level(dep, pen, mat, conf)
+    return (score, _TIER_FR[compute_tier(score)])
 
 
 def _tier_key(tier: str) -> str:
-    mapping = {"Critique": "critical", "Elevee": "high", "Moderee": "medium", "Faible": "low"}
-    return mapping.get(tier, "low")
+    return _TIER_KEY.get(tier, "low")
 
 
 @router.get("/export/vendors")
@@ -136,6 +129,18 @@ async def export_vendors(request: Request, db: AsyncSession = Depends(get_db)):
 
         threat, exposition = _compute_menace(v.exposure or {})
         measures = measures_by_vendor.get((v.project_id, v.id), [])
+        # Risk consumes threat_level numerically (averaged into avg_menace);
+        # keep this feed numeric — an unassessed vendor contributes 0 here,
+        # while the display surfaces (vendor UI, Pilot donut) show it distinctly.
+        threat_wire = threat if threat is not None else 0
+        # Floor maturité/confiance to 1 in the exported exposure: Risk recomputes
+        # menace from these raw factors WITHOUT a floor, so a legacy 0 would read
+        # as unassessed there while Vendor shows a conservative threat. Classif
+        # (dep/pen) is untouched, so a truly unclassified vendor still reads as
+        # unassessed on the Risk side too.
+        exp_wire = dict(v.exposure or {})
+        exp_wire["maturite"] = exp_wire.get("maturite") or 1
+        exp_wire["confiance"] = exp_wire.get("confiance") or 1
 
         all_vendors.append({
             "id": v.id,
@@ -143,8 +148,8 @@ async def export_vendors(request: Request, db: AsyncSession = Depends(get_db)):
             "type": v.sector or "",
             "status": v.status,
             "website": v.website or "",
-            "exposure": v.exposure or {},
-            "threat_level": threat,
+            "exposure": exp_wire,
+            "threat_level": threat_wire,
             "exposition": exposition,
             "measures": measures,
             "certifications": v.certifications or [],
@@ -233,7 +238,7 @@ async def internal_stats(request: Request, db: AsyncSession = Depends(get_db)):
         select(Vendor.id, Vendor.name, Vendor.exposure)
         .where(Vendor.status.in_(VENDOR_IN_SCOPE))
     )).all()
-    tiers = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    tiers = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unassessed": 0}
     vendor_list = []
     for vid, vname, vexposure in vendor_rows:
         _, tier_label = _compute_menace(vexposure or {})
@@ -300,6 +305,7 @@ async def internal_stats(request: Request, db: AsyncSession = Depends(get_db)):
     if tiers["high"]:     donut_segments.append({"label": "Élevé",    "value": tiers["high"],     "color": "red"})
     if tiers["medium"]:   donut_segments.append({"label": "Modéré",  "value": tiers["medium"],   "color": "orange"})
     if tiers["low"]:      donut_segments.append({"label": "Faible",  "value": tiers["low"],      "color": "green"})
+    if tiers["unassessed"]: donut_segments.append({"label": "Non évalué", "value": tiers["unassessed"], "color": "gray"})
 
     top_items = []
     for vid, vname, t in vendor_list:

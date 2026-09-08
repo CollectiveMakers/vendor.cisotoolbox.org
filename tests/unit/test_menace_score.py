@@ -52,57 +52,57 @@ class TestComputeMenaceFormula:
 
 
 class TestComputeMenaceZeroHandling:
-    """When any factor is zero/missing, the score should be 0 and tier Faible."""
+    """The sole 'unassessed' state is an empty classification (dependance or
+    penetration at 0) → score None, tier 'NonEvaluee'. Maturity and confidence
+    floor at 1, so a 0 there is a conservative value, not 'unassessed'."""
 
-    def test_zero_dependance(self):
+    def test_zero_dependance_is_unassessed(self):
         score, tier = _compute_menace({
             "dependance": 0, "penetration": 5,
             "maturite": 3, "confiance": 3,
         })
-        assert score == 0.0
-        assert tier == "Faible"
+        assert score is None
+        assert tier == "NonEvaluee"
 
-    def test_zero_penetration(self):
+    def test_zero_penetration_is_unassessed(self):
         score, tier = _compute_menace({
             "dependance": 5, "penetration": 0,
             "maturite": 3, "confiance": 3,
         })
-        assert score == 0.0
-        assert tier == "Faible"
+        assert score is None
+        assert tier == "NonEvaluee"
 
-    def test_zero_maturite(self):
+    def test_zero_maturite_floors_to_1(self):
+        # (5*5)/(1*3) = 8.33 — computed, not unassessed.
         score, tier = _compute_menace({
             "dependance": 5, "penetration": 5,
             "maturite": 0, "confiance": 3,
         })
-        assert score == 0.0
-        assert tier == "Faible"
+        assert score == 8.33
+        assert tier == "Critique"
 
-    def test_zero_confiance(self):
+    def test_zero_confiance_floors_to_1(self):
+        # (5*5)/(3*1) = 8.33 — the zero-confidence case is conservative, not low.
         score, tier = _compute_menace({
             "dependance": 5, "penetration": 5,
             "maturite": 3, "confiance": 0,
         })
-        assert score == 0.0
-        assert tier == "Faible"
+        assert score == 8.33
+        assert tier == "Critique"
 
-    def test_missing_keys(self):
+    def test_missing_keys_is_unassessed(self):
+        # No classification at all → dependance/penetration 0 → unassessed.
         score, tier = _compute_menace({})
-        assert score == 0.0
-        assert tier == "Faible"
+        assert score is None
+        assert tier == "NonEvaluee"
 
-    def test_none_values(self):
+    def test_none_values_is_unassessed(self):
         score, tier = _compute_menace({
             "dependance": None, "penetration": None,
             "maturite": None, "confiance": None,
         })
-        assert score == 0.0
-        assert tier == "Faible"
-
-    def test_empty_dict(self):
-        score, tier = _compute_menace({})
-        assert score == 0.0
-        assert tier == "Faible"
+        assert score is None
+        assert tier == "NonEvaluee"
 
 
 class TestComputeMenaceTiers:

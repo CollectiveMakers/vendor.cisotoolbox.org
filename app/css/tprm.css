@@ -193,6 +193,7 @@ select.tpl-criticality[data-tone="critical"] { background: var(--ct-critical-tin
 
 /* ── Risk score colors ────────────────────────────────── */
 .score-low { color: var(--ct-low-ink); }
+.score-unknown { color: var(--ct-ink-2); }
 .score-medium { color: var(--ct-medium-ink); }
 .score-high { color: var(--ct-high-ink); }
 .score-critical { color: var(--ct-critical-ink); }

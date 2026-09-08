@@ -68,9 +68,9 @@ class TestComputeDependance:
         assert compute_dependance(cl) == 4.0
 
     def test_mixed_values(self):
-        # Only non-zero values are averaged: (1 + 3) / 2 = 2.0
+        # Average of all three axes (missing = 0): (1 + 0 + 3) / 3 = 1.33
         cl = {"ops_impact": 1, "processes": 0, "replace_difficulty": 3}
-        assert compute_dependance(cl) == 2.0
+        assert compute_dependance(cl) == 1.3
 
     def test_all_non_zero_average(self):
         # (1 + 2 + 3) / 3 = 2.0
@@ -88,9 +88,10 @@ class TestComputeDependance:
         cl = {"ops_impact": "3", "processes": "2", "replace_difficulty": "1"}
         assert compute_dependance(cl) == 2.0
 
-    def test_single_non_zero(self):
+    def test_single_non_zero_divides_by_three(self):
+        # One axis filled still divides by 3: 4 / 3 = 1.33
         cl = {"ops_impact": 4, "processes": 0, "replace_difficulty": 0}
-        assert compute_dependance(cl) == 4.0
+        assert compute_dependance(cl) == 1.3
 
     def test_rounding(self):
         # (1 + 2 + 4) / 3 = 2.333... -> 2.3
@@ -112,9 +113,9 @@ class TestComputePenetration:
         assert compute_penetration(cl) == 4.0
 
     def test_mixed_values(self):
-        # Only non-zero: (2 + 4) / 2 = 3.0
+        # Average of all three axes (missing = 0): (2 + 0 + 4) / 3 = 2.0
         cl = {"data_sensitivity": 2, "integration": 0, "regulatory_impact": 4}
-        assert compute_penetration(cl) == 3.0
+        assert compute_penetration(cl) == 2.0
 
     def test_all_non_zero_average(self):
         # (1 + 3 + 2) / 3 = 2.0
@@ -139,40 +140,55 @@ class TestComputePenetration:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestComputeThreatLevel:
-    def test_low_dep_pen_high_mat_conf(self):
-        # ((1+1)/2 + (4-4) + (4-4)) / 3 * 4 = (1 + 0 + 0) / 3 * 4 = 1.33
-        result = compute_threat_level(1.0, 1.0, 4.0, 4.0)
-        assert result == 1.33
+    """Canonical formula (dep * pen) / (mat * conf); None when not assessed."""
 
-    def test_high_dep_pen_low_mat_conf(self):
-        # ((4+4)/2 + (4-0) + (4-0)) / 3 * 4 = (4 + 4 + 4) / 3 * 4 = 16.0
-        result = compute_threat_level(4.0, 4.0, 0.0, 0.0)
-        assert result == 16.0
+    def test_full_exposure_low_defences_is_high(self):
+        # (4 * 4) / (1 * 1) = 16.0
+        assert compute_threat_level(4.0, 4.0, 1.0, 1.0) == 16.0
 
-    def test_all_zeros(self):
-        # ((0+0)/2 + (4-0) + (4-0)) / 3 * 4 = (0 + 4 + 4) / 3 * 4 = 10.67
-        result = compute_threat_level(0.0, 0.0, 0.0, 0.0)
-        assert result == 10.67
+    def test_critical_boundary(self):
+        # (4 * 4) / (2 * 2) = 4.0
+        assert compute_threat_level(4.0, 4.0, 2.0, 2.0) == 4.0
 
-    def test_all_fours(self):
-        # ((4+4)/2 + (4-4) + (4-4)) / 3 * 4 = (4 + 0 + 0) / 3 * 4 = 5.33
-        result = compute_threat_level(4.0, 4.0, 4.0, 4.0)
-        assert result == 5.33
+    def test_high_boundary(self):
+        # (4 * 2) / (2 * 2) = 2.0
+        assert compute_threat_level(4.0, 2.0, 2.0, 2.0) == 2.0
 
-    def test_balanced_mid(self):
-        # ((2+2)/2 + (4-2) + (4-2)) / 3 * 4 = (2 + 2 + 2) / 3 * 4 = 8.0
-        result = compute_threat_level(2.0, 2.0, 2.0, 2.0)
-        assert result == 8.0
+    def test_medium_boundary(self):
+        # (2 * 2) / (2 * 2) = 1.0
+        assert compute_threat_level(2.0, 2.0, 2.0, 2.0) == 1.0
 
-    def test_asymmetric_dep_pen(self):
-        # ((1+3)/2 + (4-2) + (4-2)) / 3 * 4 = (2 + 2 + 2) / 3 * 4 = 8.0
-        result = compute_threat_level(1.0, 3.0, 2.0, 2.0)
-        assert result == 8.0
+    def test_strong_defences_is_low(self):
+        # (1 * 1) / (4 * 4) = 0.06
+        assert compute_threat_level(1.0, 1.0, 4.0, 4.0) == 0.06
 
-    def test_max_maturity_max_confidence_zero_exposure(self):
-        # ((0+0)/2 + (4-4) + (4-4)) / 3 * 4 = 0
-        result = compute_threat_level(0.0, 0.0, 4.0, 4.0)
-        assert result == 0.0
+    def test_rounding(self):
+        # (1 * 3) / (2 * 2) = 0.75
+        assert compute_threat_level(1.0, 3.0, 2.0, 2.0) == 0.75
+
+    # ── Maturity/confidence floor at 1: they only mitigate, never "unassess" ──
+    def test_zero_confidence_floors_to_1(self):
+        # confidence 0 → treated as 1 (conservative): (4*4)/(4*1) = 4.0, not None.
+        assert compute_threat_level(4.0, 4.0, 4.0, 0.0) == 4.0
+
+    def test_zero_maturity_floors_to_1(self):
+        # maturity 0 → treated as 1: (4*4)/(1*4) = 4.0, not None.
+        assert compute_threat_level(4.0, 4.0, 0.0, 4.0) == 4.0
+
+    def test_classified_but_unassessed_is_conservative_max(self):
+        # A classified vendor with no assessment/confidence (mat=conf=1) gets
+        # the maximum threat for its exposure — never a false low.
+        assert compute_threat_level(4.0, 4.0, 1.0, 1.0) == 16.0
+
+    # ── The sole "unassessed" state: empty classification (dep/pen at 0) ──
+    def test_zero_dependance_is_unassessed(self):
+        assert compute_threat_level(0.0, 4.0, 4.0, 4.0) is None
+
+    def test_zero_penetration_is_unassessed(self):
+        assert compute_threat_level(4.0, 0.0, 4.0, 4.0) is None
+
+    def test_all_zeros_is_unassessed(self):
+        assert compute_threat_level(0.0, 0.0, 0.0, 0.0) is None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -180,17 +196,21 @@ class TestComputeThreatLevel:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestComputeTier:
+    def test_unassessed(self):
+        # None (not assessed) is a distinct tier, never "low".
+        assert compute_tier(None) == "unassessed"
+
     def test_critical(self):
-        assert compute_tier(3.0) == "critical"
-        assert compute_tier(5.0) == "critical"
+        assert compute_tier(4.0) == "critical"
+        assert compute_tier(16.0) == "critical"
 
     def test_high(self):
         assert compute_tier(2.0) == "high"
-        assert compute_tier(2.99) == "high"
+        assert compute_tier(3.99) == "high"
 
     def test_medium(self):
         assert compute_tier(1.0) == "medium"
-        assert compute_tier(1.5) == "medium"
+        assert compute_tier(1.99) == "medium"
 
     def test_low(self):
         assert compute_tier(0.0) == "low"
@@ -321,24 +341,22 @@ class TestComputeAssessmentScore:
 
 class TestScoreToMaturity:
     def test_level_4(self):
-        assert score_to_maturity(81) == 4
+        assert score_to_maturity(80) == 4
         assert score_to_maturity(100) == 4
 
     def test_level_3(self):
-        assert score_to_maturity(61) == 3
-        assert score_to_maturity(80) == 3
+        assert score_to_maturity(60) == 3
+        assert score_to_maturity(79) == 3
 
     def test_level_2(self):
-        assert score_to_maturity(41) == 2
-        assert score_to_maturity(60) == 2
+        assert score_to_maturity(40) == 2
+        assert score_to_maturity(59) == 2
 
-    def test_level_1(self):
-        assert score_to_maturity(21) == 1
-        assert score_to_maturity(40) == 1
-
-    def test_level_0(self):
-        assert score_to_maturity(0) == 0
-        assert score_to_maturity(20) == 0
+    def test_floors_at_1(self):
+        # Maturity never returns 0 — it is a denominator that only mitigates.
+        assert score_to_maturity(39) == 1
+        assert score_to_maturity(20) == 1
+        assert score_to_maturity(0) == 1
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -375,7 +393,7 @@ class TestComputeProjectStats:
         assert stats["total_measures"] == 0
         assert stats["total_assessments"] == 0
         assert stats["total_documents"] == 0
-        assert stats["vendors_by_tier"] == {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        assert stats["vendors_by_tier"] == {"critical": 0, "high": 0, "medium": 0, "low": 0, "unassessed": 0}
         assert stats["avg_assessment_score"] is None
         assert stats["measures_progress"] is None
 
@@ -386,14 +404,19 @@ class TestComputeProjectStats:
                 {"_tier": "high"},
                 {"_tier": "high"},
                 {"_tier": "low"},
+                {"_tier": "unassessed"},
+                {"_tier": "unassessed"},
             ]
         }
         stats = compute_project_stats(data)
-        assert stats["total_vendors"] == 4
+        assert stats["total_vendors"] == 6
         assert stats["vendors_by_tier"]["critical"] == 1
         assert stats["vendors_by_tier"]["high"] == 2
         assert stats["vendors_by_tier"]["low"] == 1
         assert stats["vendors_by_tier"]["medium"] == 0
+        assert stats["vendors_by_tier"]["unassessed"] == 2
+        # The breakdown must stay a true partition of total_vendors.
+        assert sum(stats["vendors_by_tier"].values()) == stats["total_vendors"]
 
     def test_vendors_by_status(self):
         data = {
@@ -528,6 +551,8 @@ class TestRecalculateAll:
         assert a["completion_rate"] == 100.0
 
     def test_vendor_without_classification(self):
+        # Empty exposure = not assessed: a distinct 'unassessed' tier with no
+        # score, never a false 'low' (the methodology fix).
         data = {
             "vendors": [{"id": "v1", "exposure": {}}],
             "risks": [],
@@ -535,5 +560,5 @@ class TestRecalculateAll:
         }
         result = recalculate_all(data)
         v = result["vendors"][0]
-        assert v["_tier"] == "low"
-        assert v["_threat_level"] == 0
+        assert v["_tier"] == "unassessed"
+        assert v["_threat_level"] is None

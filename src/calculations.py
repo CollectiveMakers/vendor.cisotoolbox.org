@@ -21,34 +21,56 @@ def _to_num(val) -> float:
 # ═════════════════════════════════════════════════════════════════════
 
 def compute_dependance(classification: dict) -> float:
-    """Average of dependency-axis sliders (0-4 scale)."""
+    """Average of the three dependency-axis sliders (0-4 scale).
+
+    Divides by 3 — a missing/zero axis counts as 0, matching the frontend
+    ``_avgSliders`` and the methodology doc (``moyenne(3 axes)``). Averaging
+    only the non-zero axes diverged from both and, under the multiplicative
+    threat formula, inflated the tier for a partially-classified vendor.
+    """
     ops = _to_num(classification.get("ops_impact"))
     proc = _to_num(classification.get("processes"))
     repl = _to_num(classification.get("replace_difficulty"))
-    vals = [v for v in [ops, proc, repl] if v > 0]
-    return round(sum(vals) / len(vals), 1) if vals else 0
+    return round((ops + proc + repl) / 3, 1)
 
 
 def compute_penetration(classification: dict) -> float:
-    """Average of penetration-axis sliders (0-4 scale)."""
+    """Average of the three penetration-axis sliders (0-4 scale).
+
+    Divides by 3 (missing axis = 0) — same rule as ``compute_dependance`` and
+    the frontend ``_avgSliders``.
+    """
     data = _to_num(classification.get("data_sensitivity"))
     integ = _to_num(classification.get("integration"))
     reg = _to_num(classification.get("regulatory_impact"))
-    vals = [v for v in [data, integ, reg] if v > 0]
-    return round(sum(vals) / len(vals), 1) if vals else 0
+    return round((data + integ + reg) / 3, 1)
 
 
-def compute_threat_level(dependance: float, penetration: float, maturite: float, confiance: float) -> float:
-    """Threat level = ((dep + pen) / 2 + (4 - mat) + (4 - conf)) / 3 * 4."""
-    avg_exposure = (dependance + penetration) / 2
-    maturity_gap = 4 - maturite
-    trust_gap = 4 - confiance
-    return round((avg_exposure + maturity_gap + trust_gap) / 3 * 4, 2)
+def compute_threat_level(dependance: float, penetration: float,
+                         maturite: float, confiance: float) -> float | None:
+    """Canonical vendor threat level = (dep * pen) / (mat * conf).
+
+    Maturity and confidence floor at 1 — they can only *mitigate* the threat
+    (they are the denominator), never make it uncomputable. The sole
+    "unassessed" state is an empty classification (dependance or penetration at
+    0), for which this returns ``None``. A classified-but-not-yet-assessed
+    vendor (mat=conf=1 by default) therefore gets the conservative maximum for
+    its exposure, not a false low. Single source of truth for the three
+    surfaces that used to diverge: the frontend ``_computeExposure`` and
+    ``routes/internal._compute_menace`` share this exact formula and scale.
+    """
+    if not dependance or not penetration:
+        return None
+    m = maturite or 1
+    c = confiance or 1
+    return round((dependance * penetration) / (m * c), 2)
 
 
-def compute_tier(threat_level: float) -> str:
-    """Map threat level to tier label."""
-    if threat_level >= 3:
+def compute_tier(threat_level: float | None) -> str:
+    """Map the canonical threat level to a tier. ``None`` => ``unassessed``."""
+    if threat_level is None:
+        return "unassessed"
+    if threat_level >= 4:
         return "critical"
     if threat_level >= 2:
         return "high"
@@ -104,16 +126,18 @@ def compute_assessment_score(responses: list[dict], questions: list[dict] | None
 
 
 def score_to_maturity(score: float) -> int:
-    """Convert assessment score (0-100) to maturity level (0-4)."""
-    if score >= 81:
+    """Convert assessment score (0-100) to maturity level (1-4).
+
+    Floors at 1: maturity can never be 0 (see the exposure methodology — it is
+    a denominator that only mitigates the threat).
+    """
+    if score >= 80:
         return 4
-    if score >= 61:
+    if score >= 60:
         return 3
-    if score >= 41:
+    if score >= 40:
         return 2
-    if score >= 21:
-        return 1
-    return 0
+    return 1
 
 
 def compute_risk_level(impact: int, likelihood: int) -> str:
@@ -169,13 +193,11 @@ def recalculate_all(data: dict) -> dict:
         mat = _to_num(exp.get("maturite"))
         conf = _to_num(exp.get("confiance"))
 
-        if dep > 0 and pen > 0:
-            threat = compute_threat_level(dep, pen, mat, conf)
-            v["_threat_level"] = threat
-            v["_tier"] = compute_tier(threat)
-        else:
-            v["_threat_level"] = 0
-            v["_tier"] = "low"
+        # A partially-assessed vendor reads as "unassessed", never a false
+        # "low" — compute_threat_level returns None unless all four factors set.
+        threat = compute_threat_level(dep, pen, mat, conf)
+        v["_threat_level"] = threat
+        v["_tier"] = compute_tier(threat)
 
         v["_dora_critical"] = compute_is_dora_critical(cl)
         v["exposure"] = exp
@@ -212,8 +234,9 @@ def compute_project_stats(data: dict) -> dict:
     # Count measures across all vendors
     total_measures = sum(len(v.get("measures") or []) for v in vendors)
 
-    # Vendors by tier
-    tiers: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    # Vendors by tier — "unassessed" is a real bucket, not dropped, so the
+    # breakdown stays a true partition of total_vendors (mirrors internal.py).
+    tiers: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unassessed": 0}
     for v in vendors:
         tier = v.get("_tier", "low")
         if tier in tiers:

@@ -52,6 +52,10 @@ var _vendorListTab = "vendors";
 var _VENDOR_TONES = {
     critical: "critical", high: "high", medium: "medium", low: "low",
     blocker: "critical", major: "high", info: "info",
+    // Not assessed is a distinct state OFF the threat scale — a neutral tone,
+    // neither a reassuring green nor a false alarm. The "Non évalué" label
+    // carries the to-do meaning.
+    unassessed: "neutral",
 };
 function _vendorTone(v) {
     return _VENDOR_TONES[(v || "").toString()] || "neutral";
@@ -905,15 +909,11 @@ function renderVendorDetail() {
     h += '<button class="ct-btn" data-variant="danger" data-size="sm" data-click="deleteVendor" data-args=\'' + _da(_selectedVendor) + '\'>' + t("vendor.delete") + '</button>';
     h += '</div>';
     // Info bar: threat level + risk scores
-    var ex = v.exposure || {};
-    var menace = _computeExposure(ex);
+    var menace = _computeExposure(_fullExposure(v));
     h += '<div id="vendor-info-bar" class="ct-flex ct-items-center ct-gap-3 ct-mb-2 ct-text-label ct-muted ct-row-wrap">';
-    if (menace > 0) {
-        h += '<span id="vendor-menace-display">' + t("vendor.threat_level") + ' <strong class="' + _exposureClass(menace) + '">' + menace + ' — ' + _exposureLabel(menace) + '</strong></span>';
-    }
+    h += '<span id="vendor-menace-display">' + t("vendor.threat_level") + ' ' + _threatHtml(menace) + '</span>';
     if (_hdrRisks.length > 0) {
-        if (menace > 0)
-            h += '<span style="width:1px;height:14px;background:var(--ct-line)"></span>';
+        h += '<span style="width:1px;height:14px;background:var(--ct-line)"></span>';
         h += '<span>' + t("vendor.inherent_risk") + ' <strong class="' + _scoreClass(_hdrInherent) + '">' + _hdrInherent + '/25</strong></span>';
         h += '<span>' + t("vendor.residual_risk") + ' <strong class="' + _scoreClass(_hdrResidual) + '">' + _hdrResidual + '/25</strong></span>';
         if (_hdrDueDate)
@@ -1282,36 +1282,37 @@ function _renderVendorForm(v) {
     h += _slider("vendor.cls_regulatory", "v-cls-reg", c.regulatory_impact || 0, 4);
     h += '</div>';
     h += '</div>';
-    // Hidden inputs for computed values used by _computeExposure
-    var dep = _avgSliders([c.ops_impact, c.processes, c.replace_difficulty]);
-    var pen = _avgSliders([c.data_sensitivity, c.integration, c.regulatory_impact]);
+    // Hidden inputs for computed values used by _computeExposure. dep/pen and
+    // maturite are DERIVED (classification / validated assessments) — see
+    // _fullExposure — so the display matches the list and tier badge.
+    var fx = _fullExposure(v);
+    var dep = fx.dependance, pen = fx.penetration;
     h += '<input type="hidden" id="v-dep" value="' + dep + '">';
     h += '<input type="hidden" id="v-pen" value="' + pen + '">';
-    h += '<input type="hidden" id="v-mat" value="' + (ex.maturite || 0) + '">';
-    h += '<input type="hidden" id="v-conf" value="' + (ex.confiance || 0) + '">';
+    h += '<input type="hidden" id="v-mat" value="' + fx.maturite + '">';
+    h += '<input type="hidden" id="v-conf" value="' + fx.confiance + '">';
     // Threat level result
-    var menace = _computeExposure({ dependance: dep, penetration: pen, maturite: ex.maturite || 0, confiance: ex.confiance || 0 });
+    var menace = _computeExposure(fx);
     var clsScore = _computeClassificationScore(c);
     var isDoraCritical = _isDoraICTCritical(c);
     h += '<div class="exposure-result" id="threat-result">';
     h += '<span>' + t("vendor.threat_level") + ' : </span>';
-    h += '<strong class="' + _exposureClass(menace) + '">' + menace + '/4</strong>';
-    h += ' — <span class="' + _exposureClass(menace) + '">' + _exposureLabel(menace) + '</span>';
+    h += _threatHtml(menace, true);
     if (isDoraCritical)
         h += ' <span class="ct-ref" data-size="sm">' + t("vendor.dora_critical") + '</span>';
     h += '</div>';
     h += '<div class="ct-text-label ct-muted ct-mt-1">';
     h += t("vendor.dependance") + ' : <strong>' + dep + '/4</strong>';
     h += ' — ' + t("vendor.penetration") + ' : <strong>' + pen + '/4</strong>';
-    if (ex.maturite || ex.confiance) {
-        h += ' — ' + t("vendor.maturite") + ' : <strong>' + (ex.maturite || 0) + '/4</strong>';
-        h += ' — ' + t("vendor.confiance") + ' : <strong>' + (ex.confiance || 0) + '/4</strong>';
+    if (fx.maturite || fx.confiance) {
+        h += ' — ' + t("vendor.maturite") + ' : <strong>' + fx.maturite + '/4</strong>';
+        h += ' — ' + t("vendor.confiance") + ' : <strong>' + fx.confiance + '/4</strong>';
     }
     h += '</div>';
     // GDPR checkbox only
     h += '<div style="margin:var(--ct-s2) 0">';
     h += '<label class="ct-inline-flex ct-items-center ct-gap-1 ct-clickable ct-text-meta ct-strong ct-m-0">';
-    h += '<input type="checkbox" id="v-gdpr"' + (c.gdpr_subprocessor ? ' checked' : '') + ' data-change="_autoSaveVendorField">';
+    h += '<input type="checkbox" id="v-gdpr"' + (c.gdpr_subprocessor ? ' checked' : '') + ' data-change="_autoSaveVendorField" style="margin:0;flex:none">';
     h += '<span>' + t("vendor.gdpr_subprocessor") + '</span>';
     h += '</label>';
     h += '</div>';
@@ -1322,35 +1323,75 @@ function _renderVendorForm(v) {
     return h;
 }
 // ── Exposure helpers (same formula as PP in Risk) ──
+// Threat = (dependency x penetration) / (maturity x confidence), all rated
+// 1..4 (0 = not filled). Returns null — "not assessed" — as soon as a factor
+// is missing, NOT 0. Two reasons: maturity and confidence are the denominator,
+// so a missing one would push the threat UP, not down (dividing by ~0); and
+// more importantly, a vendor never evaluated must not read as "low threat" —
+// absence of assessment is not a certificate of safety. Callers render a
+// distinct "Non évalué" state and treat it as to-be-assessed, never as safe.
 function _computeExposure(ex) {
     if (!ex)
-        return 0;
-    var d = ex.dependance || 0, p = ex.penetration || 0, m = ex.maturite || 0, c = ex.confiance || 0;
-    if (!d || !p || !m || !c)
-        return 0;
+        return null;
+    var d = ex.dependance || 0, p = ex.penetration || 0;
+    // Maturity and confidence floor at 1 — they only mitigate the threat.
+    // The sole "unassessed" state is an empty classification (dep/pen at 0).
+    var m = ex.maturite || 1, c = ex.confiance || 1;
+    if (!d || !p)
+        return null;
     return Math.round((d * p) / (m * c) * 100) / 100;
+}
+// The three DERIVED exposure factors are recomputed from their source of
+// truth on every read, because their stored cache is only refreshed on
+// specific triggers (save, assessment validation) — a vendor could otherwise
+// read as unassessed in the list/tier despite being assessed:
+//   - dependance/penetration ← the classification sliders
+//   - maturite ← the weighted score of the vendor's VALIDATED assessments
+//     (falls back to a hand-entered maturite when there is no validated one,
+//      mirroring _refreshVendorMaturity).
+// confiance stays the manual value.
+function _fullExposure(v) {
+    var ex = v.exposure || {}, c = v.classification || {};
+    var matDetail = _computeVendorMaturityDetail(v.id);
+    // Maturity and confidence floor at 1 (never 0) — they only mitigate the
+    // threat. A classified-but-unassessed vendor is thus conservative (high).
+    var maturite = matDetail.rows.length > 0 ? _scoreToMaturite(matDetail.score) : (ex.maturite || 1);
+    return {
+        dependance: _avgSliders([c.ops_impact, c.processes, c.replace_difficulty]),
+        penetration: _avgSliders([c.data_sensitivity, c.integration, c.regulatory_impact]),
+        maturite: maturite,
+        confiance: ex.confiance || 1,
+    };
+}
+// Threat badge HTML. `withScale` appends "/4"; a null threat renders the
+// "Non évalué" badge instead of a false number.
+function _threatHtml(menace, withScale) {
+    if (menace == null) {
+        return '<strong class="score-unknown">' + esc(t("vendor.exposure_unassessed")) + '</strong>';
+    }
+    return '<strong class="' + _exposureClass(menace) + '">' + menace + (withScale ? '/4' : '')
+        + ' — ' + esc(_exposureLabel(menace)) + '</strong>';
 }
 function _refreshThreatDisplay() {
     var v = _selectedVendor !== null ? D.vendors[_selectedVendor] : null;
     if (!v)
         return;
-    var ex = v.exposure || {};
+    var ex = _fullExposure(v);
     var menace = _computeExposure(ex);
     // Update hidden inputs
     var matEl = document.getElementById("v-mat");
     if (matEl)
-        matEl.value = String(ex.maturite || 0);
+        matEl.value = String(ex.maturite || 1);
     var confEl = document.getElementById("v-conf");
     if (confEl)
-        confEl.value = String(ex.confiance || 0);
+        confEl.value = String(ex.confiance || 1);
     // Update threat display
     var threatEl = document.getElementById("threat-result");
     if (threatEl) {
         var cls = v.classification || {};
         var dora = _isDoraICTCritical(cls);
         threatEl.innerHTML = '<span>' + t("vendor.threat_level") + ' : </span>' +
-            '<strong class="' + _exposureClass(menace) + '">' + menace + '</strong>' +
-            ' — <span class="' + _exposureClass(menace) + '">' + _exposureLabel(menace) + '</span>' +
+            _threatHtml(menace, true) +
             (dora ? ' <span class="ct-ref" data-size="sm">' + t("vendor.dora_critical") + '</span>' : '');
         // Two guards on header ids absent from every template were removed
         // here: they were always false. The tier is rendered by the vendor
@@ -1359,23 +1400,20 @@ function _refreshThreatDisplay() {
         if (detailEl && detailEl.style && detailEl.style.fontSize === "0.78em") {
             detailEl.innerHTML = t("vendor.dependance") + ' : <strong>' + (ex.dependance || 0) + '/4</strong>' +
                 ' — ' + t("vendor.penetration") + ' : <strong>' + (ex.penetration || 0) + '/4</strong>' +
-                ' — ' + t("vendor.maturite") + ' : <strong>' + (ex.maturite || 0) + '/4</strong>' +
-                ' — ' + t("vendor.confiance") + ' : <strong>' + (ex.confiance || 0) + '/4</strong>';
+                ' — ' + t("vendor.maturite") + ' : <strong>' + (ex.maturite || 1) + '/4</strong>' +
+                ' — ' + t("vendor.confiance") + ' : <strong>' + (ex.confiance || 1) + '/4</strong>';
         }
     }
     // Update the info bar at top of vendor detail
     var menaceSpan = document.getElementById("vendor-menace-display");
     if (menaceSpan) {
-        if (menace > 0) {
-            menaceSpan.innerHTML = t("vendor.threat_level") + ' <strong class="' + _exposureClass(menace) + '">' + menace + ' — ' + _exposureLabel(menace) + '</strong>';
-            menaceSpan.style.display = "";
-        }
-        else {
-            menaceSpan.style.display = "none";
-        }
+        menaceSpan.innerHTML = t("vendor.threat_level") + ' ' + _threatHtml(menace);
+        menaceSpan.style.display = "";
     }
 }
 function _exposureClass(level) {
+    if (level == null)
+        return "score-unknown";
     if (level >= 4)
         return "score-critical";
     if (level >= 2)
@@ -1385,6 +1423,8 @@ function _exposureClass(level) {
     return "score-low";
 }
 function _exposureLabel(level) {
+    if (level == null)
+        return t("vendor.exposure_unassessed");
     if (level >= 4)
         return t("vendor.exposure_critical");
     if (level >= 2)
@@ -2273,12 +2313,12 @@ function _renderVendorDocs(v) {
     else {
         h += _renderDocsTable(docs);
     }
-    // Global confidence selector
-    var conf = (v.exposure && v.exposure.confiance != null) ? v.exposure.confiance : "";
+    // Global confidence selector — floors at 1 (never 0), default 1.
+    var conf = (v.exposure && v.exposure.confiance) ? v.exposure.confiance : 1;
     h += '<div class="ct-mt-3 ct-p-3 ct-bg-canvas ct-r-md ct-flex ct-items-center ct-gap-2">';
     h += '<label class="ct-text-label ct-strong ct-m-0">' + t("doc.confidence") + '</label>';
     h += '<select data-change="updateVendorConfiance" data-pass-el class="ct-select">';
-    for (var i = 0; i <= 4; i++) {
+    for (var i = 1; i <= 4; i++) {
         h += '<option value="' + i + '"' + (conf === i ? ' selected' : '') + '>' + i + ' — ' + esc(t("doc.confidence_" + i)) + '</option>';
     }
     h += '</select>';
@@ -2371,7 +2411,8 @@ function updateVendorConfiance(el) {
         return;
     if (!v.exposure)
         v.exposure = {};
-    v.exposure.confiance = parseInt(el.value) || 0;
+    // Confidence floors at 1 and is capped at 4 — never 0.
+    v.exposure.confiance = Math.min(4, Math.max(1, parseInt(el.value) || 1));
     _persist("vendor", v.id, { exposure: v.exposure });
     _refreshThreatDisplay();
 }
@@ -2545,7 +2586,7 @@ function addVendor() {
             data_sensitivity: 0, integration: 0, regulatory_impact: 0,
             gdpr_subprocessor: false
         },
-        exposure: { dependance: 0, penetration: 0, maturite: 0, confiance: 0 },
+        exposure: { dependance: 0, penetration: 0, maturite: 1, confiance: 1 },
         certifications: [], dpa_signed: false, sub_contractors: [],
         status: "prospect",
         measures: [],
@@ -2599,8 +2640,9 @@ function _autoSaveVendorField() {
         var cc = v.classification;
         v.exposure.dependance = _avgSliders([cc.ops_impact, cc.processes, cc.replace_difficulty]);
         v.exposure.penetration = _avgSliders([cc.data_sensitivity, cc.integration, cc.regulatory_impact]);
-        v.exposure.maturite = parseInt(el("v-mat")) || 0;
-        v.exposure.confiance = parseInt(el("v-conf")) || 0;
+        // Maturity and confidence floor at 1 — never 0.
+        v.exposure.maturite = Math.max(1, parseInt(el("v-mat")) || 1);
+        v.exposure.confiance = Math.min(4, Math.max(1, parseInt(el("v-conf")) || 1));
         var _ancienStatus = v.status;
         v.status = el("v-status");
         // Vendor offboarding: purge what has no object any more, keep what
@@ -4572,9 +4614,10 @@ function _updateMaturityConfig(path, value) {
         obj = obj[parts[i]];
     }
     obj[parts[parts.length - 1]] = v;
-    _autoSave();
-    // Recompute maturity for all vendors that have validated assessments
+    // Recompute maturity for all vendors first (each persists itself), THEN
+    // save — otherwise the blob is written before the maturities are updated.
     (D.vendors || []).forEach(function (vd) { _refreshVendorMaturity(vd.id); });
+    _autoSave();
     renderPanel();
 }
 window._updateMaturityConfig = _updateMaturityConfig;
@@ -4619,6 +4662,11 @@ function _refreshVendorMaturity(vendorId) {
     if (detail.rows.length > 0) {
         v.exposure.maturite = _scoreToMaturite(detail.score);
         v.maturity_score = detail.score; // raw 0..100 for display
+        // Persist the derived maturity on the VENDOR: the backend surfaces
+        // (Pilot donut, Risk export) read the stored exposure, so without this
+        // they compute threat from a stale maturité and diverge from the UI,
+        // which re-derives live. The single-source-of-truth guarantee lives here.
+        _persist("vendor", v.id, { exposure: v.exposure, maturity_score: v.maturity_score });
     }
 }
 // ═══════════════════════════════════════════════════════════════
@@ -5910,8 +5958,9 @@ function _loadExcelJS() {
 // HELPERS
 // ═══════════════════════════════════════════════════════════════
 function _getTier(v) {
-    var ex = v.exposure || {};
-    var menace = _computeExposure(ex);
+    var menace = _computeExposure(_fullExposure(v));
+    if (menace == null)
+        return "unassessed"; // to be assessed, not "low"
     if (menace >= 4)
         return "critical";
     if (menace >= 2)
@@ -5921,7 +5970,8 @@ function _getTier(v) {
     return "low";
 }
 function _scoreToMaturite(score) {
-    return score >= 80 ? 4 : score >= 60 ? 3 : score >= 40 ? 2 : score >= 20 ? 1 : 0;
+    // Floors at 1: maturity can never be 0 (exposure methodology).
+    return score >= 80 ? 4 : score >= 60 ? 3 : score >= 40 ? 2 : 1;
 }
 function _verifyAndAddDoc(vendorId, doc) {
     // Verify URL server-side (HEAD request, no CORS issues, real HTTP status)
